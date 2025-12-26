@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Route Manager V1.3 Integrated</title>
+    <title>Route Manager V1.4 (VWorld)</title>
     
     <link href='https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css' rel='stylesheet' />
     
@@ -19,18 +19,19 @@
         #top-bar {
             position: absolute; top: 12px; left: 12px; right: 12px;
             display: flex; justify-content: space-between; align-items: flex-start;
-            z-index: 20; pointer-events: none; /* 배경은 클릭 투과 */
+            z-index: 20; pointer-events: none;
         }
 
         /* Status Panel */
         #status-panel {
             background: rgba(255, 255, 255, 0.95); padding: 12px 16px; border-radius: 16px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.12); font-size: 13px; width: 230px;
-            pointer-events: auto; /* 패널은 클릭 가능 */ backdrop-filter: blur(10px);
+            pointer-events: auto; backdrop-filter: blur(10px);
         }
         .status-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
         .label { color: #666; font-weight: 500; }
         .val { font-weight: 700; color: #007aff; }
+        .val.active { color: #34c759; }
         .legend-row { margin-top: 8px; font-size: 11px; display: flex; gap: 8px; font-weight: bold; }
 
         /* Right Top Buttons */
@@ -40,7 +41,7 @@
             width: 44px; height: 44px; font-size: 22px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15); cursor: pointer;
             display: flex; align-items: center; justify-content: center;
-            transition: transform 0.1s; pointer-events: auto; /* 버튼 클릭 필수 */
+            transition: transform 0.1s; pointer-events: auto;
         }
         .icon-btn:active { transform: scale(0.95); background: #f2f2f2; }
 
@@ -64,7 +65,7 @@
             z-index: 20; pointer-events: none;
         }
 
-        /* Sub Menu (Hidden by default) */
+        /* Sub Menu */
         .event-sub-group {
             display: flex; flex-direction: column; gap: 12px; align-items: flex-end;
             margin-bottom: 5px; opacity: 0; transform: translateY(20px); pointer-events: none;
@@ -86,7 +87,6 @@
         }
         .sub-btn:active .sub-btn-label { opacity: 1; }
 
-        /* Main Event Toggle Button */
         #btn-event-toggle {
             background: #ff9500; color: white; font-size: 26px;
             border-radius: 50%; width: 60px; height: 60px; border: none;
@@ -95,7 +95,6 @@
         }
         #btn-event-toggle.active { transform: rotate(45deg); background: #ff3b30; }
 
-        /* My Location Button */
         #btn-my-loc {
             width: 60px; height: 60px; border-radius: 50%; font-size: 26px;
             background: white; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
@@ -213,7 +212,7 @@
     <div class="content">
         <div id="tab-layers" class="tab-pane active">
             <div class="card">
-                <h3>레이어 추가</h3>
+                <h3>새 레이어 추가</h3>
                 <div class="field">
                     <select id="add-type" onchange="App.UI.toggleAddForm()">
                         <option value="geojson_file">로컬 GeoJSON 파일</option>
@@ -275,20 +274,19 @@
 
 <script>
 /**
- * Route Manager V1.3 Integrated Logic
+ * Route Manager V1.4 (VWorld + Auto GPS Fix)
  */
 const App = {
-    // 1. Config & Persistence
     Config: {
         data: {
             interpStep: 0.25, searchRadius: 12.5, overlapRatio: 0.9, bufferRadius: 1.0,
             mode: 'dec', targetField: 'target_cnt', defaultValue: 1, wsUrl: 'wss://echo.websocket.org'
         },
         init() {
-            const saved = localStorage.getItem('RM_Config_V3');
+            const saved = localStorage.getItem('RM_Config_V4'); // Version bump for VWorld
             if (saved) this.data = { ...this.data, ...JSON.parse(saved) };
         },
-        save() { localStorage.setItem('RM_Config_V3', JSON.stringify(this.data)); },
+        save() { localStorage.setItem('RM_Config_V4', JSON.stringify(this.data)); },
         saveFromUI() {
             this.data.interpStep = parseFloat(document.getElementById('cfg-interp').value);
             this.data.searchRadius = parseFloat(document.getElementById('cfg-dist').value);
@@ -305,7 +303,7 @@ const App = {
         exportSettings() {
             const packet = { config: this.data, layers: App.Layers.list.map(l => { const {data, ...meta} = l; return meta; }) };
             const blob = new Blob([JSON.stringify(packet, null, 2)], {type: "application/json"});
-            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `rm_config_${Date.now()}.json`;
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `rm_settings_${Date.now()}.json`;
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
         },
         importSettings(input) {
@@ -318,32 +316,33 @@ const App = {
                     if(packet.config) this.data = packet.config;
                     if(packet.layers) { App.Layers.list = []; packet.layers.forEach(l => App.Layers.addLayer(l)); }
                     this.save(); App.Layers.save();
-                    alert("설정이 로드되었습니다. 앱을 새로고침합니다."); location.reload();
+                    alert("설정 로드 완료. 새로고침합니다."); location.reload();
                 } catch(err) { alert("파일 오류"); }
             };
             r.readAsText(file);
         },
-        clearAll() { if(confirm("모든 데이터를 초기화하시겠습니까?")) { localStorage.clear(); location.reload(); } }
+        clearAll() { if(confirm("초기화?")) { localStorage.clear(); location.reload(); } }
     },
 
-    // 2. Global State
-    State: { isSurveying: false, lastGps: null, currentMatchId: null, wsConnected: false, traceMemory: {}, visitHistory: {}, gpsLog: [] },
+    State: { isSurveying: false, lastGps: null, currentMatchId: null, wsConnected: false, traceMemory: {}, visitHistory: {}, gpsLog: [], initialZoomDone: false },
 
-    // 3. Layer Manager
     Layers: {
         list: [], targetId: null,
         init() {
-            const saved = localStorage.getItem('RM_Layers_V3');
+            const saved = localStorage.getItem('RM_Layers_V4');
             if (saved) this.list = JSON.parse(saved);
-            else this.addLayer({ id: 'osm-base', type: 'raster', name: 'OpenStreetMap', visible: true, url: 'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png' });
+            else this.addLayer({ 
+                id: 'vworld-base', type: 'raster', name: 'VWorld Base', visible: true, 
+                url: 'https://xdworld.vworld.kr/2d/Base/service/{z}/{x}/{y}.png' 
+            });
         },
         save() {
             const toSave = this.list.map(l => { const { data, ...meta } = l; return meta; });
-            localStorage.setItem('RM_Layers_V3', JSON.stringify(toSave));
+            localStorage.setItem('RM_Layers_V4', JSON.stringify(toSave));
         },
         addLayer(l) { if(!this.list.find(x => x.id === l.id)) this.list.push(l); this.addToMap(l); this.save(); App.UI.renderLayerLists(); },
         removeLayer(id) {
-            if (id === 'osm-base') return;
+            if (id === 'vworld-base') return;
             if (App.Map.instance.getLayer(id)) App.Map.instance.removeLayer(id);
             if (App.Map.instance.getSource(id)) App.Map.instance.removeSource(id);
             if (this.targetId === id) { if (App.Map.instance.getLayer('target-viz')) App.Map.instance.removeLayer('target-viz'); this.targetId = null; }
@@ -393,12 +392,12 @@ const App = {
         addNewLayerFromUI() {
             const type = document.getElementById('add-type').value;
             const name = document.getElementById('add-name').value;
-            if (!name) return alert("이름을 입력하세요");
+            if (!name) return alert("이름 입력");
             const newId = 'L' + Date.now();
             let obj = { id: newId, name: name, visible: true, isTarget: false };
             if (type === 'geojson_file') {
                 const f = document.getElementById('add-file').files[0];
-                if (!f) return alert("파일을 선택하세요");
+                if (!f) return alert("파일 선택");
                 const r = new FileReader();
                 r.onload = e => {
                     obj.type = 'geojson'; obj.data = JSON.parse(e.target.result);
@@ -422,14 +421,13 @@ const App = {
         }
     },
 
-    // 4. Map
     Map: {
         instance: null,
         init() {
             this.instance = new maplibregl.Map({
                 container: 'map',
                 style: { version: 8, sources: {}, layers: [] },
-                center: [126.9778, 37.5663], zoom: 17
+                center: [126.9778, 37.5663], zoom: 16
             });
             this.instance.on('load', () => {
                 this.instance.addSource('user_pos', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -437,7 +435,6 @@ const App = {
                 App.Layers.init();
                 App.Layers.list.forEach(l => App.Layers.addToMap(l));
                 App.Engine.startGps();
-                this.centerUser();
             });
         },
         updateMarker(pt, active) {
@@ -445,14 +442,18 @@ const App = {
             this.instance.getSource('user_pos').setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: pt } }] });
         },
         centerUser() {
-            navigator.geolocation.getCurrentPosition(
-                p => App.Map.instance.flyTo({ center: [p.coords.longitude, p.coords.latitude], zoom: 18 }),
-                e => console.log("GPS Init Fail")
-            );
+            if (App.State.lastGps) {
+                this.instance.flyTo({ center: [App.State.lastGps.lng, App.State.lastGps.lat], zoom: 18 });
+            } else {
+                // Manual trigger fallback
+                navigator.geolocation.getCurrentPosition(
+                    p => this.instance.flyTo({ center: [p.coords.longitude, p.coords.latitude], zoom: 18 }),
+                    e => alert("GPS 신호 대기 중입니다. 잠시 후 다시 시도하세요.")
+                );
+            }
         }
     },
 
-    // 5. Engine
     Engine: {
         wsSocket: null,
         startGps() {
@@ -461,7 +462,15 @@ const App = {
                 const { longitude, latitude, accuracy, speed, heading } = pos.coords;
                 App.State.lastGps = { lng: longitude, lat: latitude, speed: speed||0, heading: heading||0 };
                 document.getElementById('st-gps').innerText = `±${Math.round(accuracy)}m`;
+                
                 App.Map.updateMarker([longitude, latitude], App.State.isSurveying);
+                
+                // Auto Center on First Fix
+                if (!App.State.initialZoomDone && accuracy < 500) {
+                    App.Map.instance.flyTo({ center: [longitude, latitude], zoom: 18 });
+                    App.State.initialZoomDone = true;
+                }
+
                 if (App.State.isSurveying) this.processMatching([longitude, latitude]);
             }, e => console.error(e), { enableHighAccuracy: true });
             setInterval(() => this.sendWs(), 1000);
@@ -541,7 +550,6 @@ const App = {
         }
     },
 
-    // 6. UI & Event
     Event: {
         videoStream: null,
         toggleMenu() {
@@ -600,7 +608,7 @@ const App = {
             const t = document.getElementById('add-type').value;
             const f = document.getElementById('form-url');
             if(t.includes('file')) f.innerHTML = '<input type="file" id="add-file" accept=".geojson,.json" class="btn btn-secondary">';
-            else f.innerHTML = '<input type="text" id="add-url" placeholder="URL 입력...">';
+            else f.innerHTML = '<input type="text" id="add-url" placeholder="URL...">';
         },
         updateSurveyBtn() {
             const b = document.getElementById('btn-survey');
@@ -616,7 +624,7 @@ const App = {
         renderLayerLists() {
             const mList = document.getElementById('manage-list'); mList.innerHTML = '';
             App.Layers.list.forEach(l => {
-                if(l.id==='osm-base') return;
+                if(l.id==='vworld-base') return;
                 const isT = l.id === App.Layers.targetId;
                 mList.innerHTML += `<div class="layer-manage-item"><div class="layer-header"><span style="font-weight:600;">${l.name}</span><div>${isT?'<span class="tag target">TARGET</span>':''}<span class="tag">${l.type}</span></div></div><div style="display:flex; gap:5px;">${l.type==='geojson'?`<button class="btn btn-primary" style="margin:0; padding:8px; font-size:12px; flex:2;" onclick="App.Layers.setTarget('${l.id}')">Target</button>`:''}<button class="btn btn-danger" style="margin:0; padding:8px; font-size:12px; flex:1;" onclick="App.Layers.removeLayer('${l.id}')">삭제</button></div></div>`;
             });
