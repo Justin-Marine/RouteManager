@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Route Manager V1.2</title>
-    
+    <title>Route Manager V1.3</title>
     <link href='https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css' rel='stylesheet' />
     <link rel="stylesheet" href="style.css">
 </head>
@@ -16,8 +15,8 @@
             <div class="status-row"><span class="label">Status</span> <span id="st-mode" class="val">Inactive</span></div>
             <div class="status-row"><span class="label">GPS</span> <span id="st-gps" class="val">-</span></div>
             <div class="status-row"><span class="label">Target</span> <span id="st-match" class="val">-</span></div>
-            <div class="status-row" style="margin-top:8px;">
-                <span class="legend"><span style="color:#ff3b30">● 3</span> <span style="color:#ffcc00">● 2</span> <span style="color:#34c759">● 1</span> <span style="color:#d1d1d6">● 0</span></span>
+            <div class="legend-row">
+                <span style="color:#ff3b30">● 3</span> <span style="color:#ffcc00">● 2</span> <span style="color:#34c759">● 1</span> <span style="color:#d1d1d6">● 0</span>
             </div>
         </div>
         
@@ -38,11 +37,12 @@
             <div class="fab-wrapper"><span class="sub-btn-label">정체</span><button class="sub-btn" onclick="App.Event.sendText('정체')">🚗</button></div>
             <div class="fab-wrapper"><span class="sub-btn-label">기타</span><button class="sub-btn" onclick="App.Event.sendText('기타')">📝</button></div>
         </div>
+        
         <button id="btn-event-toggle" onclick="App.Event.toggleMenu()">⚡</button>
         <button id="btn-my-loc" onclick="App.Map.centerUser()">🎯</button>
     </div>
 
-    <div id="bottom-center">
+    <div id="bottom-bar">
         <button id="btn-survey" class="main-action-btn" onclick="App.Engine.toggleSurvey()">Start Survey</button>
     </div>
 </div>
@@ -50,7 +50,7 @@
 <div id="settings-view">
     <div class="header">
         <button class="icon-btn back-btn" onclick="App.UI.closeSettings()">❮</button>
-        <span class="title">Settings</span>
+        <span class="title">설정 (Settings)</span>
     </div>
     <div class="tabs">
         <button class="tab active" onclick="App.UI.switchTab('tab-layers')">데이터</button>
@@ -92,10 +92,10 @@
         </div>
         <div id="tab-system" class="tab-pane">
             <div class="card">
-                <h3>설정 파일 관리</h3>
-                <button class="btn btn-secondary" onclick="App.Config.exportSettings()">설정 내보내기 (.json)</button>
+                <h3>설정 파일</h3>
+                <button class="btn btn-secondary" onclick="App.Config.exportSettings()">내보내기 (.json)</button>
                 <input type="file" id="import-file" accept=".json" style="display:none" onchange="App.Config.importSettings(this)">
-                <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">설정 불러오기</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">불러오기</button>
             </div>
             <div class="card">
                 <h3>통신</h3>

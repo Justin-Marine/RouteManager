@@ -1,8 +1,7 @@
 /**
- * Route Manager V1.2 (Split Ver)
+ * Route Manager V1.3
  */
 const App = {
-    // 1. Configuration & Persistence
     Config: {
         data: {
             interpStep: 0.25, searchRadius: 12.5, overlapRatio: 0.9, bufferRadius: 1.0,
@@ -12,9 +11,7 @@ const App = {
             const saved = localStorage.getItem('RM_Config_V2');
             if (saved) this.data = { ...this.data, ...JSON.parse(saved) };
         },
-        save() {
-            localStorage.setItem('RM_Config_V2', JSON.stringify(this.data));
-        },
+        save() { localStorage.setItem('RM_Config_V2', JSON.stringify(this.data)); },
         saveFromUI() {
             this.data.interpStep = parseFloat(document.getElementById('cfg-interp').value);
             this.data.searchRadius = parseFloat(document.getElementById('cfg-dist').value);
@@ -29,10 +26,7 @@ const App = {
             App.UI.closeSettings();
         },
         exportSettings() {
-            const packet = {
-                config: this.data,
-                layers: App.Layers.list.map(l => { const {data, ...meta} = l; return meta; })
-            };
+            const packet = { config: this.data, layers: App.Layers.list.map(l => { const {data, ...meta} = l; return meta; }) };
             const blob = new Blob([JSON.stringify(packet, null, 2)], {type: "application/json"});
             const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `rm_settings_${Date.now()}.json`;
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
@@ -45,10 +39,7 @@ const App = {
                 try {
                     const packet = JSON.parse(e.target.result);
                     if(packet.config) this.data = packet.config;
-                    if(packet.layers) {
-                        App.Layers.list = [];
-                        packet.layers.forEach(l => App.Layers.addLayer(l));
-                    }
+                    if(packet.layers) { App.Layers.list = []; packet.layers.forEach(l => App.Layers.addLayer(l)); }
                     this.save(); App.Layers.save();
                     alert("설정 로드 완료. 새로고침합니다."); location.reload();
                 } catch(err) { alert("파일 오류"); }
@@ -58,21 +49,10 @@ const App = {
         clearAll() { if(confirm("초기화?")) { localStorage.clear(); location.reload(); } }
     },
 
-    // 2. Global State
-    State: {
-        isSurveying: false,
-        lastGps: null,
-        currentMatchId: null,
-        wsConnected: false,
-        traceMemory: {},
-        visitHistory: {},
-        gpsLog: []
-    },
+    State: { isSurveying: false, lastGps: null, currentMatchId: null, wsConnected: false, traceMemory: {}, visitHistory: {}, gpsLog: [] },
 
-    // 3. Layer Manager
     Layers: {
-        list: [],
-        targetId: null,
+        list: [], targetId: null,
         init() {
             const saved = localStorage.getItem('RM_Layers_V2');
             if (saved) this.list = JSON.parse(saved);
@@ -82,53 +62,26 @@ const App = {
             const toSave = this.list.map(l => { const { data, ...meta } = l; return meta; });
             localStorage.setItem('RM_Layers_V2', JSON.stringify(toSave));
         },
-        addLayer(l) {
-            if(!this.list.find(x => x.id === l.id)) this.list.push(l);
-            this.addToMap(l);
-            this.save();
-            App.UI.renderLayerLists();
-        },
+        addLayer(l) { if(!this.list.find(x => x.id === l.id)) this.list.push(l); this.addToMap(l); this.save(); App.UI.renderLayerLists(); },
         removeLayer(id) {
             if (id === 'osm-base') return;
             if (App.Map.instance.getLayer(id)) App.Map.instance.removeLayer(id);
             if (App.Map.instance.getSource(id)) App.Map.instance.removeSource(id);
-            if (this.targetId === id) {
-                if (App.Map.instance.getLayer('target-viz')) App.Map.instance.removeLayer('target-viz');
-                this.targetId = null;
-            }
+            if (this.targetId === id) { if (App.Map.instance.getLayer('target-viz')) App.Map.instance.removeLayer('target-viz'); this.targetId = null; }
             this.list = this.list.filter(l => l.id !== id);
-            this.save();
-            App.UI.renderLayerLists();
+            this.save(); App.UI.renderLayerLists();
         },
         setTarget(id) {
             const layer = this.list.find(l => l.id === id);
             if (!layer || layer.type !== 'geojson') return;
-            this.list.forEach(l => l.isTarget = false);
-            layer.isTarget = true;
-            this.targetId = id;
-            if (layer.data) {
-                this.ensureFields(layer.data);
-                App.Map.instance.getSource(id).setData(layer.data);
-            }
-            this.applyTargetStyle(id);
-            this.save();
-            App.UI.renderLayerLists();
+            this.list.forEach(l => l.isTarget = false); layer.isTarget = true; this.targetId = id;
+            if (layer.data) { this.ensureFields(layer.data); App.Map.instance.getSource(id).setData(layer.data); }
+            this.applyTargetStyle(id); this.save(); App.UI.renderLayerLists();
         },
         ensureFields(geojson) {
             const field = App.Config.data.targetField;
             const def = App.Config.data.defaultValue;
             geojson.features.forEach(f => { if (f.properties[field] === undefined) f.properties[field] = def; });
-        },
-        resetTargetValues() {
-            if (!this.targetId) return alert("Target 레이어 없음");
-            const layer = this.list.find(l => l.id === this.targetId);
-            if (confirm("초기화?")) {
-                const field = App.Config.data.targetField;
-                const def = App.Config.data.defaultValue;
-                layer.data.features.forEach(f => f.properties[field] = def);
-                App.Map.instance.getSource(this.targetId).setData(layer.data);
-                alert("완료");
-            }
         },
         addToMap(l) {
             const map = App.Map.instance;
@@ -137,17 +90,10 @@ const App = {
                 map.addSource(l.id, { type: 'raster', tiles: [l.url], tileSize: 256 });
                 map.addLayer({ id: l.id, type: 'raster', source: l.id, layout: { visibility: l.visible ? 'visible' : 'none' } }, 'target-bg');
             } else if (l.type === 'geojson') {
-                if (!l.data && l.url) {
-                    fetch(l.url).then(r => r.json()).then(json => { l.data = json; this.addToMap(l); });
-                    return;
-                }
+                if (!l.data && l.url) { fetch(l.url).then(r => r.json()).then(json => { l.data = json; this.addToMap(l); }); return; }
                 if (!l.data) return;
                 map.addSource(l.id, { type: 'geojson', data: l.data });
-                map.addLayer({
-                    id: l.id, type: 'line', source: l.id,
-                    layout: { 'line-cap': 'round', 'line-join': 'round', visibility: l.visible ? 'visible' : 'none' },
-                    paint: { 'line-width': 6, 'line-color': '#888', 'line-opacity': 0.4 }
-                });
+                map.addLayer({ id: l.id, type: 'line', source: l.id, layout: { 'line-cap': 'round', 'line-join': 'round', visibility: l.visible ? 'visible' : 'none' }, paint: { 'line-width': 6, 'line-color': '#888', 'line-opacity': 0.4 } });
                 if (l.isTarget) { this.targetId = l.id; this.ensureFields(l.data); this.applyTargetStyle(l.id); }
             }
         },
@@ -171,7 +117,6 @@ const App = {
             if (!name) return alert("이름 입력");
             const newId = 'L' + Date.now();
             let obj = { id: newId, name: name, visible: true, isTarget: false };
-
             if (type === 'geojson_file') {
                 const f = document.getElementById('add-file').files[0];
                 if (!f) return alert("파일 선택");
@@ -198,7 +143,6 @@ const App = {
         }
     },
 
-    // 4. Map Control
     Map: {
         instance: null,
         init() {
@@ -209,37 +153,23 @@ const App = {
             });
             this.instance.on('load', () => {
                 this.instance.addSource('user_pos', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-                this.instance.addLayer({
-                    id: 'user-marker', type: 'circle', source: 'user_pos',
-                    paint: { 'circle-radius': 8, 'circle-color': '#8e8e93', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' }
-                });
+                this.instance.addLayer({ id: 'user-marker', type: 'circle', source: 'user_pos', paint: { 'circle-radius': 8, 'circle-color': '#8e8e93', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' } });
                 App.Layers.init();
                 App.Layers.list.forEach(l => App.Layers.addToMap(l));
                 App.Engine.startGps();
-                
-                // [Initial Location]
                 this.centerUser();
             });
         },
         updateMarker(pt, active) {
             this.instance.setPaintProperty('user-marker', 'circle-color', active ? '#34c759' : '#8e8e93');
-            this.instance.getSource('user_pos').setData({
-                type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: pt } }]
-            });
+            this.instance.getSource('user_pos').setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: pt } }] });
         },
         centerUser() {
-            if (App.State.lastGps) {
-                this.instance.flyTo({ center: [App.State.lastGps.lng, App.State.lastGps.lat], zoom: 18 });
-            } else {
-                navigator.geolocation.getCurrentPosition(
-                    p => this.instance.flyTo({ center: [p.coords.longitude, p.coords.latitude], zoom: 18 }),
-                    e => console.log("Init Geo Fail")
-                );
-            }
+            if (App.State.lastGps) this.instance.flyTo({ center: [App.State.lastGps.lng, App.State.lastGps.lat], zoom: 18 });
+            else navigator.geolocation.getCurrentPosition(p=>this.instance.flyTo({center:[p.coords.longitude,p.coords.latitude],zoom:18}), e=>console.log("No Geo"));
         }
     },
 
-    // 5. Logic Engine
     Engine: {
         wsSocket: null,
         startGps() {
@@ -262,17 +192,14 @@ const App = {
             if (!layerId) return;
             const layer = App.Layers.list.find(l => l.id === layerId);
             if (!layer || !layer.data) return;
-
             const cfg = App.Config.data;
             const ptGeo = turf.point(pt);
             let bestId = null, minDist = Infinity;
-
             layer.data.features.forEach(f => {
                 const snapped = turf.nearestPointOnLine(f, ptGeo);
                 const dist = turf.distance(ptGeo, snapped, {units: 'kilometers'}) * 1000;
                 if (dist < cfg.searchRadius && dist < minDist) { minDist = dist; bestId = f.properties.id || f.id; }
             });
-
             App.State.currentMatchId = bestId; 
             document.getElementById('st-match').innerText = bestId ? `ID: ${bestId}` : "-";
             if (bestId) this.updateTrace(layerId, bestId, pt);
@@ -284,7 +211,6 @@ const App = {
             if (mem.length > 200) mem.shift();
             mem.push(pt);
             if (mem.length < 2) return;
-
             try {
                 const cfg = App.Config.data;
                 const line = turf.lineString(mem);
@@ -292,7 +218,6 @@ const App = {
                 const layer = App.Layers.list.find(l => l.id === layerId);
                 const lFeat = layer.data.features.find(f => (f.properties.id == linkId || f.id == linkId));
                 const lBuf = turf.buffer(lFeat, cfg.bufferRadius/1000, {units:'kilometers'});
-                
                 if (turf.area(turf.intersect(tBuf, lBuf)) / turf.area(lBuf) >= cfg.overlapRatio) this.handlePass(layer, lFeat);
             } catch(e) {}
         },
@@ -301,7 +226,6 @@ const App = {
             const now = Date.now();
             if (App.State.visitHistory[key] && (now - App.State.visitHistory[key]) < 5000) return;
             App.State.visitHistory[key] = now;
-
             const cfg = App.Config.data;
             let val = feature.properties[cfg.targetField] || 0;
             if (cfg.mode === 'dec') { val--; if(val<0) val=0; } else val++;
@@ -331,27 +255,16 @@ const App = {
                 App.State.wsSocket.send(JSON.stringify(pl));
                 alert("이벤트 전송됨");
             } else alert("서버 미연결");
-        },
-        exportLog() {
-            if (App.State.gpsLog.length === 0) return alert("로그 없음");
-            const gj = { type: "FeatureCollection", features: App.State.gpsLog };
-            const blob = new Blob([JSON.stringify(gj)], {type:"application/json"});
-            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `gps_${Date.now()}.geojson`;
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
         }
     },
 
-    // 6. UI & Event
     Event: {
         videoStream: null,
         toggleMenu() {
             document.getElementById('event-sub-menu').classList.toggle('open');
             document.getElementById('btn-event-toggle').classList.toggle('active');
         },
-        sendText(txt) {
-            App.Engine.sendEventPayload('text', txt);
-            this.toggleMenu();
-        },
+        sendText(txt) { App.Engine.sendEventPayload('text', txt); this.toggleMenu(); },
         async startCamera() {
             this.toggleMenu();
             const video = document.getElementById('camera-view');
@@ -427,11 +340,14 @@ const App = {
             App.Layers.list.forEach(l => {
                 pList.innerHTML += `<div class="layer-row"><span class="layer-label">${l.name}${l.id===App.Layers.targetId?' (T)':''}</span><input type="checkbox" ${l.visible?'checked':''} onchange="App.Layers.toggleVis('${l.id}', this.checked)"></div>`;
             });
-        }
+        },
+        toggleVis(id, v) { App.Layers.toggleVis(id, v); }
     }
 };
 
-// Start App
-App.Config.init();
-App.Map.init();
+// Main Entry Point (Safe Init)
+document.addEventListener('DOMContentLoaded', () => {
+    App.Config.init();
+    App.Map.init();
+});
 </script>
