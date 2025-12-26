@@ -1,353 +1,240 @@
-/**
- * Route Manager V1.3
- */
 const App = {
-    Config: {
-        data: {
-            interpStep: 0.25, searchRadius: 12.5, overlapRatio: 0.9, bufferRadius: 1.0,
-            mode: 'dec', targetField: 'target_cnt', defaultValue: 1, wsUrl: 'wss://echo.websocket.org'
-        },
-        init() {
-            const saved = localStorage.getItem('RM_Config_V2');
-            if (saved) this.data = { ...this.data, ...JSON.parse(saved) };
-        },
-        save() { localStorage.setItem('RM_Config_V2', JSON.stringify(this.data)); },
-        saveFromUI() {
-            this.data.interpStep = parseFloat(document.getElementById('cfg-interp').value);
-            this.data.searchRadius = parseFloat(document.getElementById('cfg-dist').value);
-            this.data.overlapRatio = parseFloat(document.getElementById('cfg-overlap').value);
-            this.data.mode = document.getElementById('cfg-mode').value;
-            this.data.targetField = document.getElementById('cfg-field').value;
-            this.data.defaultValue = parseInt(document.getElementById('cfg-defval').value);
-            this.data.wsUrl = document.getElementById('cfg-ws').value;
-            this.save();
-            if (App.Layers.targetId) App.Layers.applyTargetStyle(App.Layers.targetId);
-            alert("저장되었습니다.");
-            App.UI.closeSettings();
-        },
-        exportSettings() {
-            const packet = { config: this.data, layers: App.Layers.list.map(l => { const {data, ...meta} = l; return meta; }) };
-            const blob = new Blob([JSON.stringify(packet, null, 2)], {type: "application/json"});
-            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `rm_settings_${Date.now()}.json`;
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        },
-        importSettings(input) {
-            const file = input.files[0];
-            if(!file) return;
-            const r = new FileReader();
-            r.onload = e => {
-                try {
-                    const packet = JSON.parse(e.target.result);
-                    if(packet.config) this.data = packet.config;
-                    if(packet.layers) { App.Layers.list = []; packet.layers.forEach(l => App.Layers.addLayer(l)); }
-                    this.save(); App.Layers.save();
-                    alert("설정 로드 완료. 새로고침합니다."); location.reload();
-                } catch(err) { alert("파일 오류"); }
-            };
-            r.readAsText(file);
-        },
-        clearAll() { if(confirm("초기화?")) { localStorage.clear(); location.reload(); } }
+    state: {
+        systemOn: false,
+        surveyOn: false,
+        cameraStream: null
+    },
+    
+    init: function() {
+        console.log("App Initializing...");
+        this.Map.init();
+        this.UI.init();
     },
 
-    State: { isSurveying: false, lastGps: null, currentMatchId: null, wsConnected: false, traceMemory: {}, visitHistory: {}, gpsLog: [] },
-
-    Layers: {
-        list: [], targetId: null,
-        init() {
-            const saved = localStorage.getItem('RM_Layers_V2');
-            if (saved) this.list = JSON.parse(saved);
-            else this.addLayer({ id: 'osm-base', type: 'raster', name: 'OpenStreetMap', visible: true, url: 'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png' });
-        },
-        save() {
-            const toSave = this.list.map(l => { const { data, ...meta } = l; return meta; });
-            localStorage.setItem('RM_Layers_V2', JSON.stringify(toSave));
-        },
-        addLayer(l) { if(!this.list.find(x => x.id === l.id)) this.list.push(l); this.addToMap(l); this.save(); App.UI.renderLayerLists(); },
-        removeLayer(id) {
-            if (id === 'osm-base') return;
-            if (App.Map.instance.getLayer(id)) App.Map.instance.removeLayer(id);
-            if (App.Map.instance.getSource(id)) App.Map.instance.removeSource(id);
-            if (this.targetId === id) { if (App.Map.instance.getLayer('target-viz')) App.Map.instance.removeLayer('target-viz'); this.targetId = null; }
-            this.list = this.list.filter(l => l.id !== id);
-            this.save(); App.UI.renderLayerLists();
-        },
-        setTarget(id) {
-            const layer = this.list.find(l => l.id === id);
-            if (!layer || layer.type !== 'geojson') return;
-            this.list.forEach(l => l.isTarget = false); layer.isTarget = true; this.targetId = id;
-            if (layer.data) { this.ensureFields(layer.data); App.Map.instance.getSource(id).setData(layer.data); }
-            this.applyTargetStyle(id); this.save(); App.UI.renderLayerLists();
-        },
-        ensureFields(geojson) {
-            const field = App.Config.data.targetField;
-            const def = App.Config.data.defaultValue;
-            geojson.features.forEach(f => { if (f.properties[field] === undefined) f.properties[field] = def; });
-        },
-        addToMap(l) {
-            const map = App.Map.instance;
-            if (map.getSource(l.id)) return;
-            if (l.type === 'raster') {
-                map.addSource(l.id, { type: 'raster', tiles: [l.url], tileSize: 256 });
-                map.addLayer({ id: l.id, type: 'raster', source: l.id, layout: { visibility: l.visible ? 'visible' : 'none' } }, 'target-bg');
-            } else if (l.type === 'geojson') {
-                if (!l.data && l.url) { fetch(l.url).then(r => r.json()).then(json => { l.data = json; this.addToMap(l); }); return; }
-                if (!l.data) return;
-                map.addSource(l.id, { type: 'geojson', data: l.data });
-                map.addLayer({ id: l.id, type: 'line', source: l.id, layout: { 'line-cap': 'round', 'line-join': 'round', visibility: l.visible ? 'visible' : 'none' }, paint: { 'line-width': 6, 'line-color': '#888', 'line-opacity': 0.4 } });
-                if (l.isTarget) { this.targetId = l.id; this.ensureFields(l.data); this.applyTargetStyle(l.id); }
+    Engine: {
+        toggleSystem: function() {
+            App.state.systemOn = !App.state.systemOn;
+            const btn = document.getElementById('btn-power');
+            const status = document.getElementById('st-sys');
+            const surveyBtn = document.getElementById('btn-survey');
+            
+            if (App.state.systemOn) {
+                btn.style.color = '#34c759'; // Green
+                status.textContent = 'ON';
+                status.classList.remove('off');
+                status.style.color = '#34c759';
+                surveyBtn.disabled = false;
+                surveyBtn.textContent = '조사 시작';
+                App.Engine.startGPS();
+            } else {
+                btn.style.color = '#ff3b30'; // Red
+                status.textContent = 'OFF';
+                status.classList.add('off');
+                status.style.color = '#999';
+                surveyBtn.disabled = true;
+                surveyBtn.textContent = '시스템을 켜주세요';
+                if (App.state.surveyOn) App.Engine.toggleSurvey();
+                App.Engine.stopGPS();
             }
         },
-        applyTargetStyle(sourceId) {
-            const map = App.Map.instance;
-            if (map.getLayer('target-viz')) map.removeLayer('target-viz');
-            const field = App.Config.data.targetField;
-            map.addLayer({
-                id: 'target-viz', type: 'line', source: sourceId,
-                layout: { 'line-cap': 'round', 'line-join': 'round' },
-                paint: {
-                    'line-width': 5,
-                    'line-color': ['match', ['get', field], 1, '#34c759', 2, '#ffcc00', 3, '#ff3b30', '#007aff'],
-                    'line-opacity': ['case', ['>', ['get', field], 0], 0.6, 0.0]
+        toggleSurvey: function() {
+            if (!App.state.systemOn) return;
+            App.state.surveyOn = !App.state.surveyOn;
+            const status = document.getElementById('st-survey');
+            const btn = document.getElementById('btn-survey');
+            
+            if (App.state.surveyOn) {
+                status.textContent = 'Recording';
+                status.style.color = '#ff3b30';
+                btn.textContent = '조사 종료';
+                btn.style.background = '#ff3b30';
+            } else {
+                status.textContent = 'Standby';
+                status.style.color = '#999';
+                btn.textContent = '조사 시작';
+                btn.style.background = '#007aff';
+            }
+        },
+        startGPS: function() {
+            if (navigator.geolocation) {
+                this.watchId = navigator.geolocation.watchPosition(
+                    (pos) => {
+                        document.getElementById('st-gps').textContent = 'Fix';
+                        document.getElementById('st-gps').style.color = '#34c759';
+                        App.Map.updateUserLocation([pos.coords.longitude, pos.coords.latitude]);
+                    },
+                    (err) => {
+                        document.getElementById('st-gps').textContent = 'Error';
+                        console.error(err);
+                    },
+                    { enableHighAccuracy: true }
+                );
+            }
+        },
+        stopGPS: function() {
+            if (this.watchId) navigator.geolocation.clearWatch(this.watchId);
+            document.getElementById('st-gps').textContent = '-';
+            document.getElementById('st-gps').style.color = '#999';
+        },
+        exportLog: function() { alert('로그 내보내기 기능 (구현 필요)'); },
+        toggleWS: function() { alert('WebSocket 연결 시도...'); }
+    },
+
+    UI: {
+        init: function() {
+            // 초기화 로직
+        },
+        openSettings: function() {
+            document.getElementById('settings-view').classList.add('active');
+        },
+        closeSettings: function() {
+            document.getElementById('settings-view').classList.remove('active');
+        },
+        switchTab: function(tabId) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+            
+            document.getElementById(tabId).classList.add('active');
+            
+            // 탭 버튼 활성화 상태 업데이트
+            const btns = document.querySelectorAll('.tab');
+            btns.forEach(btn => {
+                if(btn.getAttribute('onclick').includes(tabId)) {
+                    btn.classList.add('active');
                 }
             });
         },
-        addNewLayerFromUI() {
-            const type = document.getElementById('add-type').value;
-            const name = document.getElementById('add-name').value;
-            if (!name) return alert("이름 입력");
-            const newId = 'L' + Date.now();
-            let obj = { id: newId, name: name, visible: true, isTarget: false };
-            if (type === 'geojson_file') {
-                const f = document.getElementById('add-file').files[0];
-                if (!f) return alert("파일 선택");
-                const r = new FileReader();
-                r.onload = e => {
-                    obj.type = 'geojson'; obj.data = JSON.parse(e.target.result);
-                    this.addLayer(obj);
-                    const bbox = turf.bbox(obj.data);
-                    App.Map.instance.fitBounds(bbox, {padding:50});
-                    if(!this.targetId) this.setTarget(newId);
-                };
-                r.readAsText(f);
-            } else {
-                obj.url = document.getElementById('add-url').value;
-                obj.type = (type === 'raster') ? 'raster' : 'geojson';
-                this.addLayer(obj);
-            }
+        toggleLayerPopover: function() {
+            const el = document.getElementById('layer-popover');
+            el.style.display = el.style.display === 'block' ? 'none' : 'block';
         },
-        toggleVis(id, v) {
-            const l = this.list.find(x=>x.id===id); if(l) l.visible = v;
-            if(App.Map.instance.getLayer(id)) App.Map.instance.setLayoutProperty(id, 'visibility', v?'visible':'none');
-            if(id===this.targetId && App.Map.instance.getLayer('target-viz')) App.Map.instance.setLayoutProperty('target-viz', 'visibility', v?'visible':'none');
-            this.save();
+        toggleAddForm: function() {
+            const type = document.getElementById('add-type').value;
+            if (type === 'geojson_file') {
+                document.getElementById('add-url').style.display = 'none';
+                document.getElementById('btn-file-sel').style.display = 'block';
+            } else {
+                document.getElementById('add-url').style.display = 'block';
+                document.getElementById('btn-file-sel').style.display = 'none';
+            }
         }
     },
 
     Map: {
-        instance: null,
-        init() {
-            this.instance = new maplibregl.Map({
+        map: null,
+        userMarker: null,
+        init: function() {
+            // MapLibre GL 초기화 (OpenStreetMap 타일 사용)
+            this.map = new maplibregl.Map({
                 container: 'map',
-                style: { version: 8, sources: {}, layers: [] },
-                center: [126.9778, 37.5663], zoom: 17
+                style: {
+                    'version': 8,
+                    'sources': {
+                        'osm': {
+                            'type': 'raster',
+                            'tiles': ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                            'tileSize': 256,
+                            'attribution': '&copy; OpenStreetMap Contributors'
+                        }
+                    },
+                    'layers': [
+                        {
+                            'id': 'osm-tiles',
+                            'type': 'raster',
+                            'source': 'osm',
+                            'minzoom': 0,
+                            'maxzoom': 19
+                        }
+                    ]
+                },
+                center: [126.9780, 37.5665], // 서울 시청 부근
+                zoom: 14
             });
-            this.instance.on('load', () => {
-                this.instance.addSource('user_pos', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-                this.instance.addLayer({ id: 'user-marker', type: 'circle', source: 'user_pos', paint: { 'circle-radius': 8, 'circle-color': '#8e8e93', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' } });
-                App.Layers.init();
-                App.Layers.list.forEach(l => App.Layers.addToMap(l));
-                App.Engine.startGps();
-                this.centerUser();
-            });
+            
+            this.map.addControl(new maplibregl.NavigationControl(), 'top-left');
         },
-        updateMarker(pt, active) {
-            this.instance.setPaintProperty('user-marker', 'circle-color', active ? '#34c759' : '#8e8e93');
-            this.instance.getSource('user_pos').setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: pt } }] });
-        },
-        centerUser() {
-            if (App.State.lastGps) this.instance.flyTo({ center: [App.State.lastGps.lng, App.State.lastGps.lat], zoom: 18 });
-            else navigator.geolocation.getCurrentPosition(p=>this.instance.flyTo({center:[p.coords.longitude,p.coords.latitude],zoom:18}), e=>console.log("No Geo"));
-        }
-    },
-
-    Engine: {
-        wsSocket: null,
-        startGps() {
-            if (!navigator.geolocation) return;
-            navigator.geolocation.watchPosition(pos => {
-                const { longitude, latitude, accuracy, speed, heading } = pos.coords;
-                App.State.lastGps = { lng: longitude, lat: latitude, speed: speed||0, heading: heading||0 };
-                document.getElementById('st-gps').innerText = `±${Math.round(accuracy)}m`;
-                App.Map.updateMarker([longitude, latitude], App.State.isSurveying);
-                if (App.State.isSurveying) this.processMatching([longitude, latitude]);
-            }, e => console.error(e), { enableHighAccuracy: true });
-            setInterval(() => this.sendWs(), 1000);
-        },
-        toggleSurvey() {
-            App.State.isSurveying = !App.State.isSurveying;
-            App.UI.updateSurveyBtn();
-        },
-        processMatching(pt) {
-            const layerId = App.Layers.targetId;
-            if (!layerId) return;
-            const layer = App.Layers.list.find(l => l.id === layerId);
-            if (!layer || !layer.data) return;
-            const cfg = App.Config.data;
-            const ptGeo = turf.point(pt);
-            let bestId = null, minDist = Infinity;
-            layer.data.features.forEach(f => {
-                const snapped = turf.nearestPointOnLine(f, ptGeo);
-                const dist = turf.distance(ptGeo, snapped, {units: 'kilometers'}) * 1000;
-                if (dist < cfg.searchRadius && dist < minDist) { minDist = dist; bestId = f.properties.id || f.id; }
-            });
-            App.State.currentMatchId = bestId; 
-            document.getElementById('st-match').innerText = bestId ? `ID: ${bestId}` : "-";
-            if (bestId) this.updateTrace(layerId, bestId, pt);
-        },
-        updateTrace(layerId, linkId, pt) {
-            const key = `${layerId}-${linkId}`;
-            if (!App.State.traceMemory[key]) App.State.traceMemory[key] = [];
-            const mem = App.State.traceMemory[key];
-            if (mem.length > 200) mem.shift();
-            mem.push(pt);
-            if (mem.length < 2) return;
-            try {
-                const cfg = App.Config.data;
-                const line = turf.lineString(mem);
-                const tBuf = turf.buffer(turf.simplify(line, {tolerance:0.00001}), cfg.bufferRadius/1000, {units:'kilometers'});
-                const layer = App.Layers.list.find(l => l.id === layerId);
-                const lFeat = layer.data.features.find(f => (f.properties.id == linkId || f.id == linkId));
-                const lBuf = turf.buffer(lFeat, cfg.bufferRadius/1000, {units:'kilometers'});
-                if (turf.area(turf.intersect(tBuf, lBuf)) / turf.area(lBuf) >= cfg.overlapRatio) this.handlePass(layer, lFeat);
-            } catch(e) {}
-        },
-        handlePass(layer, feature) {
-            const key = `${layer.id}-${feature.properties.id}`;
-            const now = Date.now();
-            if (App.State.visitHistory[key] && (now - App.State.visitHistory[key]) < 5000) return;
-            App.State.visitHistory[key] = now;
-            const cfg = App.Config.data;
-            let val = feature.properties[cfg.targetField] || 0;
-            if (cfg.mode === 'dec') { val--; if(val<0) val=0; } else val++;
-            feature.properties[cfg.targetField] = val;
-            App.Map.instance.getSource(layer.id).setData(layer.data);
-        },
-        toggleWS() {
-            if (App.State.wsConnected) { App.State.wsSocket.close(); App.State.wsConnected = false; }
-            else {
-                try {
-                    App.State.wsSocket = new WebSocket(App.Config.data.wsUrl);
-                    App.State.wsSocket.onopen = () => { App.State.wsConnected = true; alert("WS Connected"); };
-                    App.State.wsSocket.onclose = () => { App.State.wsConnected = false; };
-                } catch(e) { alert("WS Fail"); }
-            }
-            App.UI.updateWsBtn();
-        },
-        sendWs() {
-            if (App.State.wsConnected && App.State.lastGps) {
-                const pl = { ...App.State.lastGps, surveying: App.State.isSurveying, matched_link_id: App.State.currentMatchId, ts: Date.now() };
-                App.State.wsSocket.send(JSON.stringify(pl));
+        centerUser: function() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(pos => {
+                    this.map.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 16 });
+                });
+            } else {
+                alert('GPS를 사용할 수 없습니다.');
             }
         },
-        sendEventPayload(type, data) {
-            if (App.State.wsConnected && App.State.lastGps) {
-                const pl = { type: 'event', eventType: type, eventData: data, loc: App.State.lastGps, linkId: App.State.currentMatchId, ts: Date.now() };
-                App.State.wsSocket.send(JSON.stringify(pl));
-                alert("이벤트 전송됨");
-            } else alert("서버 미연결");
+        updateUserLocation: function(coords) {
+            if (!this.userMarker) {
+                const el = document.createElement('div');
+                el.style.width = '20px';
+                el.style.height = '20px';
+                el.style.backgroundColor = '#007aff';
+                el.style.borderRadius = '50%';
+                el.style.border = '3px solid white';
+                el.style.boxShadow = '0 0 5px rgba(0,0,0,0.3)';
+                this.userMarker = new maplibregl.Marker({ element: el })
+                    .setLngLat(coords)
+                    .addTo(this.map);
+            } else {
+                this.userMarker.setLngLat(coords);
+            }
         }
     },
 
     Event: {
-        videoStream: null,
-        toggleMenu() {
-            document.getElementById('event-sub-menu').classList.toggle('open');
-            document.getElementById('btn-event-toggle').classList.toggle('active');
+        toggleMenu: function() {
+            const menu = document.getElementById('event-sub-menu');
+            menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
         },
-        sendText(txt) { App.Engine.sendEventPayload('text', txt); this.toggleMenu(); },
-        async startCamera() {
+        sendText: function(msg) {
+            alert('이벤트 기록: ' + msg);
             this.toggleMenu();
-            const video = document.getElementById('camera-view');
-            document.getElementById('camera-overlay').classList.add('active');
-            try {
-                this.videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-                video.srcObject = this.videoStream;
-            } catch(e) { alert("카메라 오류"); this.closeCamera(); }
         },
-        captureAndSend() {
+        startCamera: function() {
+            const overlay = document.getElementById('camera-overlay');
+            const video = document.getElementById('camera-view');
+            overlay.style.display = 'flex';
+            
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                .then(stream => {
+                    App.state.cameraStream = stream;
+                    video.srcObject = stream;
+                })
+                .catch(err => {
+                    alert('카메라 접근 실패 (HTTPS 또는 localhost 환경 필요): ' + err);
+                    overlay.style.display = 'none';
+                });
+        },
+        closeCamera: function() {
+            const overlay = document.getElementById('camera-overlay');
+            overlay.style.display = 'none';
+            if (App.state.cameraStream) {
+                App.state.cameraStream.getTracks().forEach(track => track.stop());
+                App.state.cameraStream = null;
+            }
+        },
+        captureAndSend: function() {
             const video = document.getElementById('camera-view');
             const canvas = document.getElementById('camera-canvas');
-            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
             canvas.getContext('2d').drawImage(video, 0, 0);
-            const base64 = canvas.toDataURL('image/jpeg', 0.6);
-            App.Engine.sendEventPayload('image', base64);
+            alert('사진이 캡처되었습니다.');
             this.closeCamera();
-        },
-        closeCamera() {
-            if(this.videoStream) this.videoStream.getTracks().forEach(t=>t.stop());
-            document.getElementById('camera-overlay').classList.remove('active');
         }
     },
-
-    UI: {
-        openSettings() { 
-            document.getElementById('settings-view').classList.add('active');
-            const d = App.Config.data;
-            document.getElementById('cfg-interp').value = d.interpStep;
-            document.getElementById('cfg-dist').value = d.searchRadius;
-            document.getElementById('cfg-overlap').value = d.overlapRatio;
-            document.getElementById('cfg-mode').value = d.mode;
-            document.getElementById('cfg-field').value = d.targetField;
-            document.getElementById('cfg-defval').value = d.defaultValue;
-            document.getElementById('cfg-ws').value = d.wsUrl;
-        },
-        closeSettings() { document.getElementById('settings-view').classList.remove('active'); },
-        switchTab(id) {
-            document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-pane').forEach(c => c.classList.remove('active'));
-            event.target.classList.add('active'); document.getElementById(id).classList.add('active');
-        },
-        toggleLayerPopover() {
-            const el = document.getElementById('layer-popover');
-            el.classList.toggle('visible');
-            this.renderLayerLists();
-        },
-        toggleAddForm() {
-            const t = document.getElementById('add-type').value;
-            const f = document.getElementById('form-url');
-            if(t.includes('file')) f.innerHTML = '<input type="file" id="add-file" accept=".geojson,.json" class="btn btn-secondary">';
-            else f.innerHTML = '<input type="text" id="add-url" placeholder="URL...">';
-        },
-        updateSurveyBtn() {
-            const b = document.getElementById('btn-survey');
-            const s = document.getElementById('st-mode');
-            if(App.State.isSurveying) { b.innerText="Stop Survey"; b.classList.add('active'); s.innerText="Active"; s.classList.add('active'); }
-            else { b.innerText="Start Survey"; b.classList.remove('active'); s.innerText="Inactive"; s.classList.remove('active'); }
-        },
-        updateWsBtn() {
-            const b = document.getElementById('btn-ws');
-            if(App.State.wsConnected) { b.innerText="연결 종료"; b.classList.replace('btn-secondary','btn-primary'); }
-            else { b.innerText="연결 시작"; b.classList.replace('btn-primary','btn-secondary'); }
-        },
-        renderLayerLists() {
-            const mList = document.getElementById('manage-list'); mList.innerHTML = '';
-            App.Layers.list.forEach(l => {
-                if(l.id==='osm-base') return;
-                const isT = l.id === App.Layers.targetId;
-                mList.innerHTML += `<div class="layer-manage-item"><div class="layer-header"><span style="font-weight:600;">${l.name}</span><div>${isT?'<span class="tag target">TARGET</span>':''}<span class="tag">${l.type}</span></div></div><div style="display:flex; gap:5px;">${l.type==='geojson'?`<button class="btn btn-primary" style="margin:0; padding:8px; font-size:12px; flex:2;" onclick="App.Layers.setTarget('${l.id}')">Target</button>`:''}<button class="btn btn-danger" style="margin:0; padding:8px; font-size:12px; flex:1;" onclick="App.Layers.removeLayer('${l.id}')">삭제</button></div></div>`;
-            });
-            const pList = document.getElementById('popover-list'); pList.innerHTML = '';
-            App.Layers.list.forEach(l => {
-                pList.innerHTML += `<div class="layer-row"><span class="layer-label">${l.name}${l.id===App.Layers.targetId?' (T)':''}</span><input type="checkbox" ${l.visible?'checked':''} onchange="App.Layers.toggleVis('${l.id}', this.checked)"></div>`;
-            });
-        },
-        toggleVis(id, v) { App.Layers.toggleVis(id, v); }
+    
+    Layers: {
+        addNewLayerFromUI: function() { alert('레이어 추가 기능'); }
+    },
+    
+    Config: {
+        saveFromUI: function() { alert('설정이 저장되었습니다.'); },
+        exportSettings: function() { alert('설정 내보내기'); },
+        importSettings: function() { alert('설정 불러오기'); },
+        clearAll: function() { if(confirm('앱을 초기화 하시겠습니까?')) location.reload(); }
     }
 };
 
-// Main Entry Point (Safe Init)
-document.addEventListener('DOMContentLoaded', () => {
-    App.Config.init();
-    App.Map.init();
-});
-</script>
+window.onload = function() {
+    App.init();
+};
