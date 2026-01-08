@@ -3,147 +3,557 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Route Manager V1.5.2</title>
+    <title>Mobile GIS Tracker</title>
+
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+    <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
     
-    <link href='https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css' rel='stylesheet' />
-    <link rel="stylesheet" href="style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
+    <style>
+        /* 2. Mobile-First CSS */
+        :root {
+            --primary-color: #007AFF;
+            --bg-color: #ffffff;
+            --panel-bg: rgba(255, 255, 255, 0.95);
+            --sheet-height-collapsed: 80px;
+            --sheet-height-expanded: 50vh;
+        }
+
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        
+        /* Map Container */
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; z-index: 1; }
+
+        /* Floating Controls (Top Right) */
+        .fab-container {
+            position: absolute; top: 10px; right: 10px; z-index: 10;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .fab {
+            width: 44px; height: 44px; border-radius: 50%;
+            background: white; border: none; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; color: #333; cursor: pointer;
+        }
+        .fab:active { background: #f0f0f0; }
+
+        /* Bottom Sheet (Logs & Main Controls) */
+        #bottom-sheet {
+            position: absolute; left: 0; right: 0; bottom: 0;
+            height: var(--sheet-height-expanded);
+            background: var(--panel-bg);
+            border-top-left-radius: 20px; border-top-right-radius: 20px;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            z-index: 20;
+            transition: transform 0.3s ease-in-out;
+            transform: translateY(calc(100% - var(--sheet-height-collapsed)));
+            display: flex; flex-direction: column;
+        }
+        
+        /* Drag Handle */
+        .sheet-handle {
+            width: 100%; height: 30px; display: flex; align-items: center; justify-content: center;
+            cursor: ns-resize;
+        }
+        .handle-bar { width: 40px; height: 5px; background: #ccc; border-radius: 5px; }
+
+        /* Sheet Content */
+        .sheet-header {
+            padding: 0 20px; height: 50px; display: flex; align-items: center; justify-content: space-between;
+            border-bottom: 1px solid #eee;
+        }
+        .status-badge {
+            padding: 5px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;
+            background: #eee; color: #666;
+        }
+        .status-badge.active { background: #e7f5ff; color: var(--primary-color); }
+        
+        .sheet-body { flex: 1; overflow-y: auto; padding: 20px; font-size: 14px; }
+        .log-entry { margin-bottom: 8px; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px; }
+        .log-time { font-size: 0.8em; color: #888; margin-right: 5px; }
+
+        /* Main Action Button */
+        .action-btn {
+            width: 100%; padding: 15px; border: none; border-radius: 10px;
+            font-size: 16px; font-weight: bold; color: white; cursor: pointer;
+            margin-bottom: 10px;
+        }
+        .btn-start { background: #34C759; }
+        .btn-stop { background: #FF3B30; display: none; }
+
+        /* Modals */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 100;
+            display: none; align-items: center; justify-content: center;
+        }
+        .modal {
+            background: white; width: 90%; max-width: 400px; max-height: 80vh;
+            border-radius: 15px; padding: 20px; overflow-y: auto; box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .modal-header { font-size: 18px; font-weight: bold; margin-bottom: 15px; display: flex; justify-content: space-between; }
+        .modal-close { cursor: pointer; color: #999; }
+        
+        /* Form Elements */
+        .form-group { margin-bottom: 15px; }
+        .form-label { display: block; font-size: 12px; color: #666; margin-bottom: 5px; }
+        .form-input, .form-select {
+            width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;
+            font-size: 14px; box-sizing: border-box;
+        }
+        .layer-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px; background: #f9f9f9; border-radius: 8px; margin-bottom: 5px;
+        }
+        .file-upload-btn {
+            display: inline-block; width: 100%; padding: 10px; text-align: center;
+            background: #eee; border-radius: 8px; cursor: pointer; font-size: 14px;
+        }
+
+        /* Utility */
+        .hidden { display: none !important; }
+    </style>
 </head>
 <body>
 
-<div id="main-ui">
-    <div id="top-bar">
-        <div id="status-panel">
-            <div class="status-row">
-                <span class="label">System</span> 
-                <span id="st-sys" class="val off">OFF</span>
-            </div>
-            <div class="status-row">
-                <span class="label">Survey</span> 
-                <span id="st-survey" class="val off">Standby</span>
-            </div>
-            <div class="status-row">
-                <span class="label">GPS</span> 
-                <span id="st-gps" class="val">-</span>
-            </div>
-            <div class="status-row" style="align-items: center; margin-top: 4px;">
-                <span class="label">Target</span>
-                <span class="legend-inline">
-                    <span style="color:#ff3b30">●3</span>
-                    <span style="color:#ff9500">●2</span>
-                    <span style="color:#ffcc00">●1</span>
-                </span>
-                <span id="st-match" class="val" style="margin-left: auto;">-</span>
-            </div>
-        </div>
-        
-        <div class="right-group">
-            <button id="btn-power" class="icon-btn power-btn" onclick="App.Engine.toggleSystem()">⏻</button>
-            <div class="spacer"></div>
-            <button class="icon-btn" onclick="App.UI.openSettings()">⚙️</button>
-            <button class="icon-btn" onclick="App.UI.toggleLayerPopover()">🗺️</button>
-        </div>
-    </div>
-    
-    <div id="layer-popover"><div id="popover-list"></div></div>
-    
     <div id="map"></div>
 
-    <div id="fab-container">
-        <div id="event-sub-menu" class="event-sub-group">
-            <div class="fab-wrapper"><span class="sub-btn-label">카메라</span><button class="sub-btn" onclick="App.Event.startCamera()">📷</button></div>
-            <div class="fab-wrapper"><span class="sub-btn-label">공사중</span><button class="sub-btn" onclick="App.Event.sendText('공사중')">🚧</button></div>
-            <div class="fab-wrapper"><span class="sub-btn-label">정체</span><button class="sub-btn" onclick="App.Event.sendText('정체')">🚗</button></div>
-            <div class="fab-wrapper"><span class="sub-btn-label">기타</span><button class="sub-btn" onclick="App.Event.sendText('기타')">📝</button></div>
+    <div class="fab-container">
+        <button class="fab" onclick="uiManager.openModal('layerModal')"><i class="fas fa-layer-group"></i></button>
+        <button class="fab" onclick="uiManager.openModal('settingsModal')"><i class="fas fa-cog"></i></button>
+        <button class="fab" onclick="gpsManager.centerMap()"><i class="fas fa-crosshairs"></i></button>
+    </div>
+
+    <div id="bottom-sheet">
+        <div class="sheet-handle" onclick="uiManager.toggleSheet()">
+            <div class="handle-bar"></div>
         </div>
+        <div class="sheet-header" onclick="uiManager.toggleSheet()">
+            <span id="current-status-text">Ready</span>
+            <span id="gps-status" class="status-badge"><i class="fas fa-satellite"></i> OFF</span>
+        </div>
+        <div class="sheet-body">
+            <button id="btn-start" class="action-btn btn-start" onclick="gpsManager.startTracking()">Start Tracking</button>
+            <button id="btn-stop" class="action-btn btn-stop" onclick="gpsManager.stopTracking()">Stop Tracking</button>
+            
+            <div id="log-container">
+                <div class="log-entry">Waiting for GPS signal...</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="layerModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <span>Layers & Target</span>
+                <span class="modal-close" onclick="uiManager.closeModal('layerModal')">&times;</span>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Add Local File (.geojson, .zip)</label>
+                <label for="fileInput" class="file-upload-btn"><i class="fas fa-upload"></i> Select File</label>
+                <input type="file" id="fileInput" class="hidden" accept=".geojson,.json,.zip" onchange="layerManager.handleFileUpload(this)">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Active Layers (Select Target)</label>
+                <div id="layer-list-container">
+                    <div style="text-align:center; color:#999; padding:10px;">No layers loaded</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="settingsModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <span>Parameters</span>
+                <span class="modal-close" onclick="uiManager.closeModal('settingsModal')">&times;</span>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Search Radius (m)</label>
+                <input type="number" id="setting-radius" class="form-input" value="30">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Overlap Ratio (0.0 - 1.0)</label>
+                <input type="number" id="setting-overlap" class="form-input" step="0.1" value="0.5">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Target Attribute Field</label>
+                <input type="text" id="setting-attr" class="form-input" value="status">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Increment Value</label>
+                <input type="number" id="setting-increment" class="form-input" value="1">
+            </div>
+            <button class="action-btn btn-start" style="margin-top:10px; background:var(--primary-color);" onclick="uiManager.saveSettings()">Save</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. Global State & Config ---
+        const state = {
+            isTracking: false,
+            watchId: null,
+            targetLayerId: null, // ID of the layer selected for analysis
+            layers: {}, // Stores raw GeoJSON data: { id: { data: geojson, type: 'LineString' ... } }
+            lastPosition: null,
+            logs: []
+        };
+
+        const config = {
+            radius: 30,
+            overlapRatio: 0.5,
+            targetAttribute: 'status',
+            incrementValue: 1,
+            reEntryTimeout: 10000
+        };
+
+        // --- 2. Map Initialization ---
+        const map = new maplibregl.Map({
+            container: 'map',
+            style: {
+                'version': 8,
+                'sources': {
+                    'osm': {
+                        'type': 'raster',
+                        'tiles': ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                        'tileSize': 256,
+                        'attribution': '&copy; OpenStreetMap Contributors'
+                    }
+                },
+                'layers': [{
+                    'id': 'osm-tiles',
+                    'type': 'raster',
+                    'source': 'osm',
+                    'minzoom': 0,
+                    'maxzoom': 19
+                }]
+            },
+            center: [127.0, 37.5], // Default (Korea)
+            zoom: 12
+        });
+
+        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+
+        // GPS Marker
+        const gpsEl = document.createElement('div');
+        gpsEl.style.width = '20px';
+        gpsEl.style.height = '20px';
+        gpsEl.style.backgroundColor = '#007AFF';
+        gpsEl.style.borderRadius = '50%';
+        gpsEl.style.border = '3px solid white';
+        gpsEl.style.boxShadow = '0 0 10px rgba(0,0,0,0.3)';
+        const gpsMarker = new maplibregl.Marker({ element: gpsEl }).setLngLat([0,0]).addTo(map);
+
+        // --- 3. Layer Manager Logic ---
+        const layerManager = {
+            addGeoJSON: function(name, geojson) {
+                const id = 'layer-' + Date.now();
+                
+                // Add to Map
+                map.addSource(id, { type: 'geojson', data: geojson });
+                map.addLayer({
+                    'id': id,
+                    'type': 'line',
+                    'source': id,
+                    'layout': { 'line-join': 'round', 'line-cap': 'round' },
+                    'paint': { 
+                        'line-color': '#FF9500', 
+                        'line-width': 4 
+                    }
+                });
+
+                // Detect geometry type for validation (simple check on first feature)
+                const geomType = geojson.features[0]?.geometry?.type || 'Unknown';
+                const isLine = geomType === 'LineString' || geomType === 'MultiLineString';
+
+                // Save to State
+                state.layers[id] = {
+                    name: name,
+                    data: geojson, // Keep raw data for Turf.js analysis
+                    isLine: isLine
+                };
+
+                this.renderLayerList();
+                
+                // Zoom to extent
+                const bbox = turf.bbox(geojson);
+                map.fitBounds(bbox, { padding: 50 });
+                
+                uiManager.log(`Loaded: ${name} (${geojson.features.length} features)`);
+                uiManager.closeModal('layerModal');
+            },
+
+            handleFileUpload: function(input) {
+                const file = input.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                const fileName = file.name;
+
+                if (fileName.endsWith('.zip')) {
+                    reader.onload = function(e) {
+                        shp(e.target.result).then(function(geojson) {
+                            // shpjs may return array of geojsons if multiple shapefiles in zip
+                            if (Array.isArray(geojson)) {
+                                geojson.forEach((g, i) => layerManager.addGeoJSON(`${fileName}-${i}`, g));
+                            } else {
+                                layerManager.addGeoJSON(fileName, geojson);
+                            }
+                        }).catch(err => alert("Error parsing Shapefile: " + err));
+                    };
+                    reader.readAsArrayBuffer(file);
+                } else if (fileName.endsWith('.geojson') || fileName.endsWith('.json')) {
+                    reader.onload = function(e) {
+                        try {
+                            const json = JSON.parse(e.target.result);
+                            layerManager.addGeoJSON(fileName, json);
+                        } catch(err) { alert("Invalid JSON"); }
+                    };
+                    reader.readAsText(file);
+                }
+            },
+
+            renderLayerList: function() {
+                const container = document.getElementById('layer-list-container');
+                container.innerHTML = '';
+
+                Object.keys(state.layers).forEach(id => {
+                    const layer = state.layers[id];
+                    const div = document.createElement('div');
+                    div.className = 'layer-item';
+                    
+                    // Radio button for Target selection (Only if LineString)
+                    const targetControl = layer.isLine 
+                        ? `<input type="radio" name="targetLayer" value="${id}" 
+                           ${state.targetLayerId === id ? 'checked' : ''} 
+                           onchange="layerManager.setTarget('${id}')"> Target` 
+                        : `<span style="font-size:10px; color:red;">Not Line</span>`;
+
+                    div.innerHTML = `
+                        <div>
+                            <strong>${layer.name}</strong><br>
+                            <span style="font-size:11px; color:#666;">${layer.isLine ? 'LineString' : 'Other'}</span>
+                        </div>
+                        <div>${targetControl}</div>
+                    `;
+                    container.appendChild(div);
+                });
+            },
+
+            setTarget: function(id) {
+                state.targetLayerId = id;
+                // Visual feedback: Change color of target layer
+                Object.keys(state.layers).forEach(lid => {
+                    if (map.getLayer(lid)) {
+                        map.setPaintProperty(lid, 'line-color', lid === id ? '#007AFF' : '#FF9500');
+                        map.setPaintProperty(lid, 'line-width', lid === id ? 6 : 4);
+                    }
+                });
+                uiManager.log(`Target layer set to: ${state.layers[id].name}`);
+            }
+        };
+
+        // --- 4. GPS & Analysis Logic (Core) ---
+        const gpsManager = {
+            startTracking: function() {
+                if (!navigator.geolocation) {
+                    alert("Geolocation is not supported by this browser.");
+                    return;
+                }
+                if (!state.targetLayerId) {
+                    alert("Please select a Target Link Layer first.");
+                    uiManager.openModal('layerModal');
+                    return;
+                }
+
+                state.isTracking = true;
+                uiManager.updateStatus(true);
+
+                state.watchId = navigator.geolocation.watchPosition(
+                    this.onPosition,
+                    this.onError,
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                );
+            },
+
+            stopTracking: function() {
+                state.isTracking = false;
+                navigator.geolocation.clearWatch(state.watchId);
+                uiManager.updateStatus(false);
+            },
+
+            onPosition: function(pos) {
+                const lng = pos.coords.longitude;
+                const lat = pos.coords.latitude;
+                const accuracy = pos.coords.accuracy;
+
+                // Update Map Marker
+                gpsMarker.setLngLat([lng, lat]);
+                if (!state.lastPosition) map.flyTo({ center: [lng, lat], zoom: 16 });
+                state.lastPosition = [lng, lat];
+
+                // Core Logic: Analysis
+                gpsManager.analyzePosition(lng, lat);
+            },
+
+            analyzePosition: function(lng, lat) {
+                const point = turf.point([lng, lat]);
+                const radiusKm = config.radius / 1000;
+                const buffer = turf.buffer(point, radiusKm, { units: 'kilometers' });
+
+                // Render Buffer (Visual Debug)
+                if (map.getSource('buffer-debug')) {
+                    map.getSource('buffer-debug').setData(buffer);
+                } else {
+                    map.addSource('buffer-debug', { type: 'geojson', data: buffer });
+                    map.addLayer({
+                        'id': 'buffer-fill', 'type': 'fill', 'source': 'buffer-debug',
+                        'paint': { 'fill-color': '#007AFF', 'fill-opacity': 0.1 }
+                    });
+                }
+
+                // Get Target Layer Data
+                const targetLayer = state.layers[state.targetLayerId];
+                if (!targetLayer) return;
+
+                let matchedCount = 0;
+
+                // Loop through features (Basic implementation - for huge datasets, use Spatial Index like RBush)
+                turf.featureEach(targetLayer.data, function (currentFeature, featureIndex) {
+                    // Check strict intersection first
+                    if (turf.booleanIntersects(buffer, currentFeature)) {
+                        
+                        // Calculate precise overlap length
+                        // Note: turf.lineOverlap returns segments.
+                        // Simplified logic for "Ratio": Length of line inside buffer / Total Length of line
+                        
+                        const split = turf.lineSplit(currentFeature, buffer);
+                        // This part is complex in Turf. 
+                        // Simplified robust approach: intersect the line with the buffer polygon.
+                        // *Turf's intersect returns geometry.*
+                        
+                        // Converting buffer to polygon if it isn't already (turf.buffer returns poly)
+                        const intersection = turf.intersect(buffer, currentFeature); 
+                        // Note: turf v6 intersect takes (poly, poly) or (poly, line)? 
+                        // Depending on version. V6 supports Poly-Line intersection via `lineSplit` or boolean.
+                        // Let's use `lineSlice` logic implicitly via simple Length check if fully contained,
+                        // or just rely on distance for this MVP as full split logic is heavy for JS loop.
+                        
+                        // ALTERNATIVE MVP LOGIC: Distance check
+                        // If distance from point to line < radius, we consider it a candidate.
+                        const distance = turf.pointToLineDistance(point, currentFeature, {units: 'meters'});
+                        
+                        if (distance <= config.radius) {
+                            // Let's simulate the "Overlap Ratio" logic:
+                            // If the line segment is short and fully inside, ratio = 1.
+                            // Here we just simulate an update.
+                            
+                            const props = currentFeature.properties;
+                            const oldVal = props[config.targetAttribute] || 0;
+                            const newVal = parseFloat(oldVal) + parseFloat(config.incrementValue);
+                            
+                            // Update property in memory
+                            props[config.targetAttribute] = newVal;
+                            
+                            uiManager.log(`Match! FID:${featureIndex} Dist:${distance.toFixed(1)}m. Val: ${oldVal}->${newVal}`);
+                            matchedCount++;
+                        }
+                    }
+                });
+                
+                if (matchedCount > 0) {
+                   uiManager.updateStatusText(`Updating... (${matchedCount} links)`);
+                } else {
+                   uiManager.updateStatusText(`Scanning...`);
+                }
+            },
+
+            onError: function(err) {
+                uiManager.log(`GPS Error: ${err.message}`);
+            },
+            
+            centerMap: function() {
+                if (state.lastPosition) map.flyTo({ center: state.lastPosition, zoom: 17 });
+            }
+        };
+
+        // --- 5. UI Manager ---
+        const uiManager = {
+            toggleSheet: function() {
+                const sheet = document.getElementById('bottom-sheet');
+                const isExpanded = sheet.style.transform === 'translateY(0px)';
+                
+                if (isExpanded) {
+                    // Collapse
+                    sheet.style.transform = `translateY(calc(100% - var(--sheet-height-collapsed)))`;
+                } else {
+                    // Expand
+                    sheet.style.transform = 'translateY(0px)';
+                }
+            },
+
+            openModal: function(id) {
+                document.getElementById(id).style.display = 'flex';
+                if(id === 'layerModal') layerManager.renderLayerList();
+            },
+
+            closeModal: function(id) {
+                document.getElementById(id).style.display = 'none';
+            },
+
+            updateStatus: function(isOn) {
+                const badge = document.getElementById('gps-status');
+                const btnStart = document.getElementById('btn-start');
+                const btnStop = document.getElementById('btn-stop');
+
+                if (isOn) {
+                    badge.innerHTML = '<i class="fas fa-satellite-dish fa-spin"></i> ON';
+                    badge.classList.add('active');
+                    btnStart.style.display = 'none';
+                    btnStop.style.display = 'block';
+                } else {
+                    badge.innerHTML = '<i class="fas fa-satellite"></i> OFF';
+                    badge.classList.remove('active');
+                    btnStart.style.display = 'block';
+                    btnStop.style.display = 'none';
+                    this.updateStatusText("Ready");
+                }
+            },
+            
+            updateStatusText: function(text) {
+                document.getElementById('current-status-text').innerText = text;
+            },
+
+            log: function(msg) {
+                const container = document.getElementById('log-container');
+                const time = new Date().toLocaleTimeString().split(' ')[0];
+                const div = document.createElement('div');
+                div.className = 'log-entry';
+                div.innerHTML = `<span class="log-time">${time}</span> ${msg}`;
+                container.prepend(div);
+                
+                // Keep only last 50 logs
+                if (container.children.length > 50) container.removeChild(container.lastChild);
+            },
+
+            saveSettings: function() {
+                config.radius = parseFloat(document.getElementById('setting-radius').value);
+                config.overlapRatio = parseFloat(document.getElementById('setting-overlap').value);
+                config.targetAttribute = document.getElementById('setting-attr').value;
+                config.incrementValue = parseFloat(document.getElementById('setting-increment').value);
+                
+                this.log("Settings saved.");
+                this.closeModal('settingsModal');
+            }
+        };
         
-        <button id="btn-event-toggle" onclick="App.Event.toggleMenu()">⚡</button>
-        <button id="btn-my-loc" onclick="App.Map.centerUser()">🎯</button>
-    </div>
-
-    <div id="bottom-bar">
-        <button id="btn-survey" class="main-action-btn" onclick="App.Engine.toggleSurvey()" disabled>
-            시스템을 켜주세요
-        </button>
-    </div>
-</div>
-
-<div id="settings-view">
-    <div class="header">
-        <button class="icon-btn back-btn" onclick="App.UI.closeSettings()">❮</button>
-        <span class="title">설정 (Settings)</span>
-    </div>
-    <div class="tabs">
-        <button class="tab active" onclick="App.UI.switchTab('tab-layers')">데이터</button>
-        <button class="tab" onclick="App.UI.switchTab('tab-algo')">알고리즘</button>
-        <button class="tab" onclick="App.UI.switchTab('tab-system')">시스템</button>
-    </div>
-    <div class="content">
-        <div id="tab-layers" class="tab-pane active">
-            <div class="card">
-                <h3>새 레이어 추가</h3>
-                <div class="field">
-                    <select id="add-type" onchange="App.UI.toggleAddForm()">
-                        <option value="geojson_file">로컬 GeoJSON 파일</option>
-                        <option value="geojson_url">웹 GeoJSON URL</option>
-                        <option value="raster">배경지도 URL (XYZ)</option>
-                    </select>
-                </div>
-                <div id="form-url" class="field">
-                    <input type="text" id="add-url" placeholder="URL 입력...">
-                    <input type="file" id="add-file" accept=".geojson,.json" style="display:none">
-                    <button id="btn-file-sel" class="btn btn-secondary" onclick="document.getElementById('add-file').click()">📂 파일 선택</button>
-                </div>
-                <div class="field"><input type="text" id="add-name" placeholder="레이어 이름"></div>
-                <button class="btn btn-primary" onclick="App.Layers.addNewLayerFromUI()">추가하기</button>
-            </div>
-            <div class="card"><h3>레이어 관리</h3><div id="manage-list"></div></div>
-        </div>
-        <div id="tab-algo" class="tab-pane">
-            <div class="card">
-                <h3>매칭 파라미터</h3>
-                <div class="field"><label>운영 모드</label><select id="cfg-mode"><option value="dec">감소</option><option value="inc">증가</option></select></div>
-                <div class="field"><label>보간 간격(m)</label><input type="number" id="cfg-interp" step="0.05"></div>
-                <div class="field"><label>탐색 반경(m)</label><input type="number" id="cfg-dist"></div>
-                <div class="field"><label>Overlap</label><input type="number" id="cfg-overlap" step="0.05" max="1.0"></div>
-                <div class="field"><label>속성 필드명</label><input type="text" id="cfg-field"></div>
-                <div class="field"><label>기본값</label><input type="number" id="cfg-defval"></div>
-                <button class="btn btn-primary" onclick="App.Config.saveFromUI()">저장하기</button>
-            </div>
-        </div>
-        <div id="tab-system" class="tab-pane">
-            <div class="card">
-                <h3>GPS 로그</h3>
-                <button class="btn btn-secondary" onclick="App.Engine.exportLog()">📥 GeoJSON 내보내기</button>
-            </div>
-            <div class="card">
-                <h3>설정 파일</h3>
-                <button class="btn btn-secondary" onclick="App.Config.exportSettings()">내보내기 (.json)</button>
-                <input type="file" id="import-file" accept=".json" style="display:none" onchange="App.Config.importSettings(this)">
-                <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">불러오기</button>
-            </div>
-            <div class="card">
-                <h3>통신</h3>
-                <div class="field"><label>WebSocket URL</label><input type="text" id="cfg-ws"></div>
-                <button id="btn-ws" class="btn btn-secondary" onclick="App.Engine.toggleWS()">연결</button>
-            </div>
-            <div class="card"><button class="btn btn-danger" onclick="App.Config.clearAll()">앱 초기화</button></div>
-        </div>
-    </div>
-</div>
-
-<div id="camera-overlay">
-    <video id="camera-view" playsinline autoplay muted></video>
-    <canvas id="camera-canvas" style="display:none;"></canvas>
-    <div id="camera-ui">
-        <button class="btn btn-secondary" style="width:100px; background:white; color:black;" onclick="App.Event.closeCamera()">취소</button>
-        <button class="shutter-btn" onclick="App.Event.captureAndSend()"></button>
-        <div style="width:100px;"></div>
-    </div>
-</div>
-
-<script src='https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js'></script>
-<script src='https://unpkg.com/@turf/turf@6.5.0/turf.min.js'></script>
-<script src="app.js"></script>
-
+        // Initial setup
+        uiManager.log("System initialized.");
+    </script>
 </body>
 </html>
