@@ -1,0 +1,319 @@
+:root {
+    --bg-color: #121212;
+    --text-color: #e0e0e0;
+    --glass-bg: rgba(30, 30, 30, 0.6);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --primary-color: #00e676; /* Neon Green */
+    --secondary-color: #2979ff; /* Neon Blue */
+    --danger-color: #ff1744;
+    --warning-color: #ffea00;
+    --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+body {
+    font-family: var(--font-family);
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    overflow: hidden; /* Prevent scroll on mobile */
+    touch-action: none; /* Prevent browser zoom/scroll */
+}
+
+/* Glassmorphism Utilities */
+.glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+}
+
+.glass-btn {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.glass-btn:active {
+    transform: scale(0.95);
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.glass-input {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--glass-border);
+    color: white;
+    padding: 10px;
+    border-radius: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+/* Status Bar */
+#status-bar {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    padding: 10px 15px;
+    display: flex;
+    gap: 15px;
+    z-index: 100;
+    font-size: 0.9rem;
+    font-weight: 500;
+    pointer-events: none; /* Let clicks pass through if needed, but usually status bar consumes them */
+    pointer-events: auto;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+#system-status-icon.on { color: var(--primary-color); text-shadow: 0 0 8px var(--primary-color); }
+#system-status-icon.warn { color: var(--warning-color); }
+#system-status-icon.error { color: var(--danger-color); }
+
+#strip-status-icon { color: #555; transition: color 0.3s; }
+#strip-status-icon.active { color: var(--primary-color); box-shadow: 0 0 5px var(--primary-color); border-radius: 50%; }
+
+/* Buttons Layout */
+.check-group {
+    position: absolute;
+    top: 50%;
+    right: 15px;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    z-index: 100;
+}
+
+.bottom-right {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: row; /* Horizontal alignment for action buttons */
+    align-items: center;
+    gap: 20px;
+    z-index: 100;
+}
+
+.fab {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+
+/* Event Button specific */
+#btn3_event {
+    width: 45px;
+    height: 45px;
+    background: rgba(41, 121, 255, 0.3); /* Blue tint */
+}
+
+/* Func Long Press Button */
+.hold-button-container {
+    position: relative;
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.progress-ring {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: rotate(-90deg);
+    pointer-events: none;
+}
+
+.progress-ring__circle {
+    transition: stroke-dashoffset 0.1s linear;
+    transform-origin: 50% 50%;
+    stroke-dasharray: 163; /* 2 * PI * 26 */
+    stroke-dashoffset: 163;
+    stroke: var(--primary-color);
+}
+
+#btn4_func {
+    width: 50px;
+    height: 50px;
+    background: rgba(0, 230, 118, 0.2); /* Green tint */
+    z-index: 2;
+    font-size: 1.2rem;
+}
+
+#btn4_func.recording {
+    background: rgba(255, 23, 68, 0.2); /* Red tint when recording/stopped */
+    color: var(--danger-color);
+}
+
+/* Modals */
+.modal {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.6);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+}
+
+.modal.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.modal-content {
+    width: 90%;
+    max-width: 400px;
+    max-height: 80%;
+    overflow-y: auto;
+    padding: 20px;
+    background: #1e1e1e; /* Solid background for legibility */
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.close-modal {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+/* Tabs */
+.tabs {
+    display: flex;
+    border-bottom: 1px solid #333;
+    margin-bottom: 20px;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 10px;
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+}
+
+.tab-btn.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+
+.tab-content {
+    display: none;
+    animation: fadeIn 0.3s;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 0.9rem;
+    color: #aaa;
+}
+
+.primary-btn {
+    width: 100%;
+    padding: 12px;
+    background: var(--primary-color);
+    border: none;
+    border-radius: 8px;
+    color: #000;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.secondary-btn {
+    width: 100%;
+    padding: 12px;
+    background: #444;
+    border: none;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+.danger-btn {
+    width: 100%;
+    padding: 12px;
+    background: var(--danger-color);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+}
+
+/* Hidden Utility */
+.hidden {
+    display: none !important;
+}
+
+/* Preset Overlay */
+.preset-overlay {
+    position: absolute;
+    bottom: 80px;
+    right: 90px;
+    display: flex;
+    flex-wrap: wrap;
+    width: 200px;
+    gap: 10px;
+    z-index: 200;
+}
+
+.preset-btn {
+    flex: 1 1 40%;
+    padding: 10px;
+    font-size: 0.8rem;
+}
+
+/* Toastify Override */
+.toastify {
+    background: var(--glass-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    color: white;
+    border-radius: 8px;
+}

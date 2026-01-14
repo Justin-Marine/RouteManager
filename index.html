@@ -1,559 +1,658 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mobile GIS Tracker</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Spatial Force (Standalone)</title>
 
-    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
-    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
-    <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
-    <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
-    
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v10.4.0/ol.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
 
-    <style>
-        /* 2. Mobile-First CSS */
-        :root {
-            --primary-color: #007AFF;
-            --bg-color: #ffffff;
-            --panel-bg: rgba(255, 255, 255, 0.95);
-            --sheet-height-collapsed: 80px;
-            --sheet-height-expanded: 50vh;
-        }
+  <style>
+    :root {
+      --bg-color: #000;
+      --glass-bg: rgba(26, 26, 26, 0.95);
+      --primary-color: #00e676;
+      --secondary-color: #2979ff;
+      --danger-color: #ff1744;
+      --warning-color: #ffea00;
+      --text-color: #f0f0f0;
+    }
 
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        
-        /* Map Container */
-        #map { position: absolute; top: 0; bottom: 0; width: 100%; z-index: 1; }
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
 
-        /* Floating Controls (Top Right) */
-        .fab-container {
-            position: absolute; top: 10px; right: 10px; z-index: 10;
-            display: flex; flex-direction: column; gap: 10px;
-        }
-        .fab {
-            width: 44px; height: 44px; border-radius: 50%;
-            background: white; border: none; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            display: flex; align-items: center; justify-content: center;
-            font-size: 18px; color: #333; cursor: pointer;
-        }
-        .fab:active { background: #f0f0f0; }
+    #map {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 0;
+    }
 
-        /* Bottom Sheet (Logs & Main Controls) */
-        #bottom-sheet {
-            position: absolute; left: 0; right: 0; bottom: 0;
-            height: var(--sheet-height-expanded);
-            background: var(--panel-bg);
-            border-top-left-radius: 20px; border-top-right-radius: 20px;
-            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-            z-index: 20;
-            transition: transform 0.3s ease-in-out;
-            transform: translateY(calc(100% - var(--sheet-height-collapsed)));
-            display: flex; flex-direction: column;
-        }
-        
-        /* Drag Handle */
-        .sheet-handle {
-            width: 100%; height: 30px; display: flex; align-items: center; justify-content: center;
-            cursor: ns-resize;
-        }
-        .handle-bar { width: 40px; height: 5px; background: #ccc; border-radius: 5px; }
+    .glass-panel {
+      background: var(--glass-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
 
-        /* Sheet Content */
-        .sheet-header {
-            padding: 0 20px; height: 50px; display: flex; align-items: center; justify-content: space-between;
-            border-bottom: 1px solid #eee;
-        }
-        .status-badge {
-            padding: 5px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;
-            background: #eee; color: #666;
-        }
-        .status-badge.active { background: #e7f5ff; color: var(--primary-color); }
-        
-        .sheet-body { flex: 1; overflow-y: auto; padding: 20px; font-size: 14px; }
-        .log-entry { margin-bottom: 8px; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px; }
-        .log-time { font-size: 0.8em; color: #888; margin-right: 5px; }
+    .glass-btn {
+      background: rgba(60, 60, 60, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
 
-        /* Main Action Button */
-        .action-btn {
-            width: 100%; padding: 15px; border: none; border-radius: 10px;
-            font-size: 16px; font-weight: bold; color: white; cursor: pointer;
-            margin-bottom: 10px;
-        }
-        .btn-start { background: #34C759; }
-        .btn-stop { background: #FF3B30; display: none; }
+    .glass-btn:active {
+      transform: scale(0.92);
+      background: rgba(80, 80, 80, 0.8);
+    }
 
-        /* Modals */
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5); z-index: 100;
-            display: none; align-items: center; justify-content: center;
-        }
-        .modal {
-            background: white; width: 90%; max-width: 400px; max-height: 80vh;
-            border-radius: 15px; padding: 20px; overflow-y: auto; box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-        }
-        .modal-header { font-size: 18px; font-weight: bold; margin-bottom: 15px; display: flex; justify-content: space-between; }
-        .modal-close { cursor: pointer; color: #999; }
-        
-        /* Form Elements */
-        .form-group { margin-bottom: 15px; }
-        .form-label { display: block; font-size: 12px; color: #666; margin-bottom: 5px; }
-        .form-input, .form-select {
-            width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;
-            font-size: 14px; box-sizing: border-box;
-        }
-        .layer-item {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 10px; background: #f9f9f9; border-radius: 8px; margin-bottom: 5px;
-        }
-        .file-upload-btn {
-            display: inline-block; width: 100%; padding: 10px; text-align: center;
-            background: #eee; border-radius: 8px; cursor: pointer; font-size: 14px;
-        }
+    .glass-input {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid #444;
+      color: white;
+      padding: 12px;
+      border-radius: 8px;
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 1rem;
+    }
 
-        /* Utility */
-        .hidden { display: none !important; }
-    </style>
+    .glass-input:focus {
+      border-color: var(--primary-color);
+      outline: none;
+    }
+
+    #status-bar {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      padding: 8px 14px;
+      display: flex;
+      gap: 15px;
+      z-index: 100;
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-icon {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #444;
+      transition: 0.3s;
+    }
+
+    .status-icon.on {
+      background: var(--primary-color);
+      box-shadow: 0 0 8px var(--primary-color);
+    }
+
+    .status-icon.warn {
+      background: var(--warning-color);
+      box-shadow: 0 0 8px var(--warning-color);
+    }
+
+    .status-icon.error {
+      background: var(--danger-color);
+      box-shadow: 0 0 8px var(--danger-color);
+    }
+
+    /* Custom Toast Container */
+    #toast-container {
+      position: absolute;
+      top: 60px;
+      left: 10px;
+      width: 250px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    .toast-item {
+      background: rgba(20, 20, 20, 0.85);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      animation: fadeIn 0.3s;
+      pointer-events: auto;
+      backdrop-filter: blur(4px);
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateX(-10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    .fab {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      margin-bottom: 12px;
+    }
+
+    .check-group {
+      position: absolute;
+      top: 100px;
+      right: 15px;
+      display: flex;
+      flex-direction: column;
+      z-index: 90;
+    }
+
+    .bottom-right {
+      position: absolute;
+      bottom: 30px;
+      right: 20px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      z-index: 90;
+    }
+
+    .hold-container {
+      position: relative;
+      width: 64px;
+      height: 64px;
+    }
+
+    .progress-ring {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform: rotate(-90deg);
+      pointer-events: none;
+    }
+
+    .progress-ring__circle {
+      transition: stroke-dashoffset 0.1s linear;
+      transform-origin: 50% 50%;
+      stroke-dasharray: 176;
+      stroke-dashoffset: 176;
+      stroke: var(--primary-color);
+    }
+
+    #btn4_func {
+      width: 56px;
+      height: 56px;
+      background: rgba(0, 230, 118, 0.15);
+      border: 2px solid var(--primary-color);
+      font-size: 1.5rem;
+      position: absolute;
+      top: 4px;
+      left: 4px;
+    }
+
+    #btn3_event {
+      width: 48px;
+      height: 48px;
+      background: rgba(41, 121, 255, 0.4);
+      border: 2px solid var(--secondary-color);
+      font-size: 1.2rem;
+    }
+
+    .preset-overlay {
+      position: absolute;
+      bottom: 100px;
+      right: 20px;
+      width: 160px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 200;
+      padding: 10px;
+    }
+
+    .preset-btn {
+      padding: 14px;
+      text-align: center;
+      font-weight: 700;
+      background: rgba(30, 30, 30, 0.95);
+      border: 1px solid #666;
+      border-radius: 10px;
+      color: #fff;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+      cursor: pointer;
+    }
+
+    .modal-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 1000;
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    .modal-container.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .slide-panel {
+      width: 100%;
+      max-width: 600px;
+      height: 85vh;
+      background: #1a1a1a;
+      border-top-left-radius: 20px;
+      border-top-right-radius: 20px;
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.2, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.5);
+      border-top: 1px solid #333;
+    }
+
+    .modal-container.visible .slide-panel {
+      transform: translateY(0);
+    }
+
+    .panel-header {
+      padding: 18px 20px;
+      border-bottom: 1px solid #333;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-title {
+      font-size: 1.2rem;
+      font-weight: bold;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .back-btn {
+      background: none;
+      border: none;
+      font-size: 1.2rem;
+      color: #ccc;
+      cursor: pointer;
+      padding: 5px;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      color: #888;
+      cursor: pointer;
+    }
+
+    .panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      position: relative;
+    }
+
+    .view-container {
+      display: none;
+      animation: slideIn 0.25s ease-out;
+    }
+
+    .view-container.active {
+      display: block;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    .layer-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #252525;
+      padding: 15px;
+      margin-bottom: 10px;
+      border-radius: 10px;
+      border: 1px solid #333;
+    }
+
+    .icon-actions {
+      display: flex;
+      gap: 15px;
+    }
+
+    .icon-btn {
+      background: none;
+      border: none;
+      font-size: 1.1rem;
+      color: #aaa;
+      cursor: pointer;
+    }
+
+    .icon-btn:hover {
+      color: #fff;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #333;
+      margin-bottom: 20px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 15px;
+      background: none;
+      border: none;
+      color: #777;
+      font-weight: 700;
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+    }
+
+    .tab-btn.active {
+      color: var(--primary-color);
+      border-bottom-color: var(--primary-color);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .primary-btn {
+      width: 100%;
+      padding: 16px;
+      background: var(--primary-color);
+      border: none;
+      border-radius: 10px;
+      color: #000;
+      font-weight: 800;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+
+    .secondary-btn {
+      width: 100%;
+      padding: 16px;
+      background: #333;
+      border: 1px solid #555;
+      border-radius: 10px;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+
+    .danger-btn {
+      background: var(--danger-color);
+      color: white;
+      border: none;
+    }
+  </style>
 </head>
+
 <body>
 
-    <div id="map"></div>
+  <div id="map"></div>
 
-    <div class="fab-container">
-        <button class="fab" onclick="uiManager.openModal('layerModal')"><i class="fas fa-layer-group"></i></button>
-        <button class="fab" onclick="uiManager.openModal('settingsModal')"><i class="fas fa-cog"></i></button>
-        <button class="fab" onclick="gpsManager.centerMap()"><i class="fas fa-crosshairs"></i></button>
+  <div id="status-bar" class="glass-panel">
+    <div class="status-item">
+      <div class="status-icon" id="sys-dot"></div> SYS
+    </div>
+    <div class="status-item">
+      <div class="status-icon" id="strip-dot"></div> STRIP
+    </div>
+    <div class="status-item">SEQ:<span id="seq-val" style="color:#fff">0</span></div>
+    <div class="status-item" style="color:#aaa">GPS:<span id="gps-val"
+        style="font-family:monospace; color:#fff">WAIT</span></div>
+  </div>
+
+  <!-- New Toast Container -->
+  <div id="toast-container"></div>
+
+  <div class="check-group">
+    <button id="btn0_layer" class="fab glass-btn"><i class="fas fa-layer-group"></i></button>
+    <button id="btn1_settings" class="fab glass-btn"><i class="fas fa-cog"></i></button>
+    <button id="btn2_mapcenter" class="fab glass-btn"><i class="fas fa-crosshairs"></i></button>
+  </div>
+
+  <div class="bottom-right">
+    <button id="btn3_event" class="fab glass-btn"><i class="fas fa-camera"></i></button>
+    <div class="hold-container">
+      <svg class="progress-ring" width="64" height="64">
+        <circle class="progress-ring__circle" stroke-width="4" fill="transparent" r="28" cx="32" cy="32" />
+      </svg>
+      <button id="btn4_func" class="fab glass-btn"><i class="fas fa-play"></i></button>
+    </div>
+  </div>
+
+  <div id="preset-overlay" class="preset-overlay hidden glass-panel">
+    <button class="preset-btn" data-val="Crack">CRACK</button>
+    <button class="preset-btn" data-val="Pothole">POTHOLE</button>
+    <button class="preset-btn" data-val="Sign">SIGN</button>
+    <button class="preset-btn" data-val="Other">OTHER</button>
+  </div>
+
+  <div id="main-modal" class="modal-container">
+    <div class="slide-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <button id="nav-back" class="back-btn hidden"><i class="fas fa-arrow-left"></i></button>
+          <span id="modal-title">Menu</span>
+        </div>
+        <button id="modal-close" class="close-btn"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="panel-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- TEMPLATES -->
+  <div id="tpl-layer" class="hidden">
+    <div class="tabs">
+      <button id="tab-btn-upload" class="tab-btn active" onclick="UI.tab('upload')">Upload</button>
+      <button id="tab-btn-list" class="tab-btn" onclick="UI.tab('list')">Manage</button>
+      <button id="tab-btn-target" class="tab-btn" onclick="UI.tab('target')">Target</button>
     </div>
 
-    <div id="bottom-sheet">
-        <div class="sheet-handle" onclick="uiManager.toggleSheet()">
-            <div class="handle-bar"></div>
-        </div>
-        <div class="sheet-header" onclick="uiManager.toggleSheet()">
-            <span id="current-status-text">Ready</span>
-            <span id="gps-status" class="status-badge"><i class="fas fa-satellite"></i> OFF</span>
-        </div>
-        <div class="sheet-body">
-            <button id="btn-start" class="action-btn btn-start" onclick="gpsManager.startTracking()">Start Tracking</button>
-            <button id="btn-stop" class="action-btn btn-stop" onclick="gpsManager.stopTracking()">Stop Tracking</button>
-            
-            <div id="log-container">
-                <div class="log-entry">Waiting for GPS signal...</div>
-            </div>
-        </div>
+    <div id="tab-upload" class="view-container active">
+      <label style="color:#aaa; font-size:0.9rem">Layer Type</label>
+      <select id="l-type" class="glass-input" style="margin-bottom:15px">
+        <option value="geojson">GeoJSON</option>
+        <option value="shp">Shapefile (Zip)</option>
+        <option value="wfs">WFS Service</option>
+        <option value="wms">WMS Service</option>
+      </select>
+
+      <!-- File Mode -->
+      <div id="file-grp">
+        <input type="file" id="l-file" class="hidden">
+        <button onclick="document.getElementById('l-file').click()" class="secondary-btn"
+          style="padding:20px; border-style:dashed;"><i class="fas fa-folder-open"></i> Select File</button>
+        <p id="file-name" style="color:#aaa; text-align:center; font-size:0.8rem; margin-top:5px;"></p>
+      </div>
+
+      <!-- URL Mode -->
+      <div id="url-grp" class="hidden">
+        <label>Service URL</label>
+        <input type="text" id="l-url" class="glass-input" placeholder="http://geoserver/wfs..."
+          style="margin-bottom:10px">
+        <label>Layer Name / Params</label>
+        <input type="text" id="l-param" class="glass-input" placeholder="typename=namespace:layer"
+          style="margin-bottom:10px">
+      </div>
+
+      <button onclick="LAYER.add()" class="primary-btn" style="margin-top:20px">Add Layer</button>
     </div>
 
-    <div id="layerModal" class="modal-overlay">
-        <div class="modal">
-            <div class="modal-header">
-                <span>Layers & Target</span>
-                <span class="modal-close" onclick="uiManager.closeModal('layerModal')">&times;</span>
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">Add Local File (.geojson, .zip)</label>
-                <label for="fileInput" class="file-upload-btn"><i class="fas fa-upload"></i> Select File</label>
-                <input type="file" id="fileInput" class="hidden" accept=".geojson,.json,.zip" onchange="layerManager.handleFileUpload(this)">
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">Active Layers (Select Target)</label>
-                <div id="layer-list-container">
-                    <div style="text-align:center; color:#999; padding:10px;">No layers loaded</div>
-                </div>
-            </div>
-        </div>
+    <div id="tab-list" class="view-container">
+      <div id="l-list-cont"></div>
     </div>
 
-    <div id="settingsModal" class="modal-overlay">
-        <div class="modal">
-            <div class="modal-header">
-                <span>Parameters</span>
-                <span class="modal-close" onclick="uiManager.closeModal('settingsModal')">&times;</span>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Search Radius (m)</label>
-                <input type="number" id="setting-radius" class="form-input" value="30">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Overlap Ratio (0.0 - 1.0)</label>
-                <input type="number" id="setting-overlap" class="form-input" step="0.1" value="0.5">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Target Attribute Field</label>
-                <input type="text" id="setting-attr" class="form-input" value="status">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Increment Value</label>
-                <input type="number" id="setting-increment" class="form-input" value="1">
-            </div>
-            <button class="action-btn btn-start" style="margin-top:10px; background:var(--primary-color);" onclick="uiManager.saveSettings()">Save</button>
+    <div id="tab-target" class="view-container">
+      <div style="background:#252525; padding:15px; border-radius:10px;">
+        <label style="color:#888;">Target Layer</label>
+        <select id="t-layer" class="glass-input" style="margin-bottom:15px"></select>
+        <label style="color:#888;">Key Column (WS ID)</label>
+        <select id="t-key" class="glass-input" style="margin-bottom:15px"></select>
+        <label style="color:#888;">Check Column (Inc/Dec)</label>
+        <div style="display:flex; gap:10px; margin-bottom:15px;">
+          <select id="t-check" class="glass-input" style="flex:1"></select>
+          <input id="t-check-new" class="glass-input hidden" style="flex:1" placeholder="New Column Name">
+          <button onclick="UI.toggleCheckNew()" class="secondary-btn" style="width:50px; margin:0;"><i
+              class="fas fa-plus"></i></button>
         </div>
+        <label style="color:#888;">Reset/Init Value</label>
+        <input type="number" id="t-init" class="glass-input" value="0" style="margin-bottom:15px;">
+
+        <button onclick="LAYER.saveTarget()" class="primary-btn">Link & Initialize</button>
+        <p style="color:#444; font-size:0.8rem; margin-top:10px; text-align:center;">Linking creates a reference for
+          matching algorithm.</p>
+      </div>
     </div>
+  </div>
 
-    <script>
-        // --- 1. Global State & Config ---
-        const state = {
-            isTracking: false,
-            watchId: null,
-            targetLayerId: null, // ID of the layer selected for analysis
-            layers: {}, // Stores raw GeoJSON data: { id: { data: geojson, type: 'LineString' ... } }
-            lastPosition: null,
-            logs: []
-        };
+  <div id="tpl-settings" class="hidden">
+    <div class="tabs">
+      <button id="tab-btn-set-sur" class="tab-btn active" onclick="UI.tab('set-sur')">Survey</button>
+      <button id="tab-btn-set-alg" class="tab-btn" onclick="UI.tab('set-alg')">Algo</button>
+      <button id="tab-btn-set-sys" class="tab-btn" onclick="UI.tab('set-sys')">System</button>
+    </div>
+    <div id="tab-set-sur" class="view-container active">
+      <label>Survey Name (Required)</label>
+      <input id="s-name" class="glass-input" style="margin-bottom:15px" placeholder="Enter Survey Name">
+      <button onclick="APP_LOGIC.saveSurvey()" class="primary-btn" style="margin-bottom:20px">Save Name</button>
 
-        const config = {
-            radius: 30,
-            overlapRatio: 0.5,
-            targetAttribute: 'status',
-            incrementValue: 1,
-            reEntryTimeout: 10000
-        };
+      <label>WebSocket URL</label>
+      <input id="s-ws" class="glass-input" value="ws://localhost:8080" style="margin-bottom:10px">
+      <button onclick="APP_LOGIC.connectWS()" class="secondary-btn">Connect WebSocket</button>
 
-        // --- 2. Map Initialization ---
-        const map = new maplibregl.Map({
-            container: 'map',
-            style: {
-                'version': 8,
-                'sources': {
-                    'osm': {
-                        'type': 'raster',
-                        'tiles': ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'],
-                        'tileSize': 256,
-                        'attribution': '&copy; OpenStreetMap Contributors'
-                    }
-                },
-                'layers': [{
-                    'id': 'osm-tiles',
-                    'type': 'raster',
-                    'source': 'osm',
-                    'minzoom': 0,
-                    'maxzoom': 19
-                }]
-            },
-            center: [127.0, 37.5], // Default (Korea)
-            zoom: 12
-        });
+      <hr style="border:0; border-top:1px solid #333; margin:20px 0;">
+      <button onclick="APP_LOGIC.exportGPS()" class="secondary-btn"><i class="fas fa-file-export"></i> Export GPS Log
+        (GeoJSON)</button>
+    </div>
+    <div id="tab-set-alg" class="view-container">
+      <label>Operation Mode</label>
+      <select id="a-mode" class="glass-input" style="margin-bottom:10px">
+        <option value="inc">Increment (+1)</option>
+        <option value="dec">Decrement (-1)</option>
+      </select>
+      <label>Search Radius (m)</label> <input id="a-rad" type="number" class="glass-input" value="30"
+        style="margin-bottom:10px">
+      <label>Interpolation Interval (m)</label> <input id="a-interp" type="number" class="glass-input" value="0.5"
+        step="0.1" style="margin-bottom:10px">
+      <label>Overlap Ratio (0.0 - 1.0)</label> <input id="a-overlap" type="number" class="glass-input" value="0.85"
+        step="0.05" max="1" min="0">
+      <button onclick="APP_LOGIC.saveAlgo()" class="primary-btn">Save Parameters</button>
+    </div>
+    <div id="tab-set-sys" class="view-container">
+      <button class="secondary-btn" onclick="APP_LOGIC.saveConfig()"><i class="fas fa-download"></i> Save Config
+        (JSON)</button>
+      <button class="secondary-btn" onclick="document.getElementById('conf-load').click()"><i class="fas fa-upload"></i>
+        Load Config (JSON)</button>
+      <input type="file" id="conf-load" class="hidden" accept=".json" onchange="APP_LOGIC.loadConfig(this)">
+      <hr style="border:0; border-top:1px solid #333; margin:20px 0;">
+      <button class="primary-btn danger-btn" onclick="location.reload()">Reset App</button>
+    </div>
+  </div>
 
-        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+  <!-- STYLE EDITOR -->
+  <div id="tpl-style" class="hidden">
+    <h4 id="st-name" style="color:var(--primary-color); margin-top:0;">Layer Name</h4>
+    <label>Stroke Color</label> <input type="color" id="st-color" class="glass-input" style="height:60px; padding:2px;">
+    <label style="margin-top:20px; display:block;">Stroke Width (px)</label> <input type="number" id="st-width"
+      class="glass-input" value="3" min="1" max="20">
+    <button onclick="LAYER.applyStyle()" class="primary-btn">Apply Style</button>
+  </div>
 
-        // GPS Marker
-        const gpsEl = document.createElement('div');
-        gpsEl.style.width = '20px';
-        gpsEl.style.height = '20px';
-        gpsEl.style.backgroundColor = '#007AFF';
-        gpsEl.style.borderRadius = '50%';
-        gpsEl.style.border = '3px solid white';
-        gpsEl.style.boxShadow = '0 0 10px rgba(0,0,0,0.3)';
-        const gpsMarker = new maplibregl.Marker({ element: gpsEl }).setLngLat([0,0]).addTo(map);
+  <!-- REPROJECTION -->
+  <div id="tpl-proj" class="hidden">
+    <label>Current Projection</label>
+    <p id="pr-curr" style="color:var(--secondary-color); font-family:monospace; margin-bottom:20px;"></p>
+    <label>Change Source Projection To:</label>
+    <select id="pr-sel" class="glass-input" style="margin-bottom:20px;">
+      <option value="EPSG:4326">EPSG:4326 (WGS84 / LonLat)</option>
+      <option value="EPSG:3857">EPSG:3857 (Web Mercator)</option>
+      <option value="EPSG:5174">EPSG:5174 (Korea Old - Bessel)</option>
+      <option value="EPSG:5179">EPSG:5179 (Korea 2000 - UTMK)</option>
+      <option value="EPSG:5186">EPSG:5186 (Korea 2000 - Central)</option>
+    </select>
+    <button onclick="LAYER.applyProj()" class="primary-btn">Reproject & Zoom</button>
+  </div>
 
-        // --- 3. Layer Manager Logic ---
-        const layerManager = {
-            addGeoJSON: function(name, geojson) {
-                const id = 'layer-' + Date.now();
-                
-                // Add to Map
-                map.addSource(id, { type: 'geojson', data: geojson });
-                map.addLayer({
-                    'id': id,
-                    'type': 'line',
-                    'source': id,
-                    'layout': { 'line-join': 'round', 'line-cap': 'round' },
-                    'paint': { 
-                        'line-color': '#FF9500', 
-                        'line-width': 4 
-                    }
-                });
+  <input type="file" id="camera-trigger" accept="image/*" capture="environment" class="hidden">
 
-                // Detect geometry type for validation (simple check on first feature)
-                const geomType = geojson.features[0]?.geometry?.type || 'Unknown';
-                const isLine = geomType === 'LineString' || geomType === 'MultiLineString';
+  <!-- LIBS -->
+  <script src="https://cdn.jsdelivr.net/npm/ol@v10.4.0/dist/ol.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf/turf.min.js"></script>
+  <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 
-                // Save to State
-                state.layers[id] = {
-                    name: name,
-                    data: geojson, // Keep raw data for Turf.js analysis
-                    isLine: isLine
-                };
+  <!-- LOGIC -->
+  <script src="js/state.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/logic.js"></script>
+  <script src="js/ui.js"></script>
 
-                this.renderLayerList();
-                
-                // Zoom to extent
-                const bbox = turf.bbox(geojson);
-                map.fitBounds(bbox, { padding: 50 });
-                
-                uiManager.log(`Loaded: ${name} (${geojson.features.length} features)`);
-                uiManager.closeModal('layerModal');
-            },
-
-            handleFileUpload: function(input) {
-                const file = input.files[0];
-                if (!file) return;
-
-                const reader = new FileReader();
-                const fileName = file.name;
-
-                if (fileName.endsWith('.zip')) {
-                    reader.onload = function(e) {
-                        shp(e.target.result).then(function(geojson) {
-                            // shpjs may return array of geojsons if multiple shapefiles in zip
-                            if (Array.isArray(geojson)) {
-                                geojson.forEach((g, i) => layerManager.addGeoJSON(`${fileName}-${i}`, g));
-                            } else {
-                                layerManager.addGeoJSON(fileName, geojson);
-                            }
-                        }).catch(err => alert("Error parsing Shapefile: " + err));
-                    };
-                    reader.readAsArrayBuffer(file);
-                } else if (fileName.endsWith('.geojson') || fileName.endsWith('.json')) {
-                    reader.onload = function(e) {
-                        try {
-                            const json = JSON.parse(e.target.result);
-                            layerManager.addGeoJSON(fileName, json);
-                        } catch(err) { alert("Invalid JSON"); }
-                    };
-                    reader.readAsText(file);
-                }
-            },
-
-            renderLayerList: function() {
-                const container = document.getElementById('layer-list-container');
-                container.innerHTML = '';
-
-                Object.keys(state.layers).forEach(id => {
-                    const layer = state.layers[id];
-                    const div = document.createElement('div');
-                    div.className = 'layer-item';
-                    
-                    // Radio button for Target selection (Only if LineString)
-                    const targetControl = layer.isLine 
-                        ? `<input type="radio" name="targetLayer" value="${id}" 
-                           ${state.targetLayerId === id ? 'checked' : ''} 
-                           onchange="layerManager.setTarget('${id}')"> Target` 
-                        : `<span style="font-size:10px; color:red;">Not Line</span>`;
-
-                    div.innerHTML = `
-                        <div>
-                            <strong>${layer.name}</strong><br>
-                            <span style="font-size:11px; color:#666;">${layer.isLine ? 'LineString' : 'Other'}</span>
-                        </div>
-                        <div>${targetControl}</div>
-                    `;
-                    container.appendChild(div);
-                });
-            },
-
-            setTarget: function(id) {
-                state.targetLayerId = id;
-                // Visual feedback: Change color of target layer
-                Object.keys(state.layers).forEach(lid => {
-                    if (map.getLayer(lid)) {
-                        map.setPaintProperty(lid, 'line-color', lid === id ? '#007AFF' : '#FF9500');
-                        map.setPaintProperty(lid, 'line-width', lid === id ? 6 : 4);
-                    }
-                });
-                uiManager.log(`Target layer set to: ${state.layers[id].name}`);
-            }
-        };
-
-        // --- 4. GPS & Analysis Logic (Core) ---
-        const gpsManager = {
-            startTracking: function() {
-                if (!navigator.geolocation) {
-                    alert("Geolocation is not supported by this browser.");
-                    return;
-                }
-                if (!state.targetLayerId) {
-                    alert("Please select a Target Link Layer first.");
-                    uiManager.openModal('layerModal');
-                    return;
-                }
-
-                state.isTracking = true;
-                uiManager.updateStatus(true);
-
-                state.watchId = navigator.geolocation.watchPosition(
-                    this.onPosition,
-                    this.onError,
-                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-                );
-            },
-
-            stopTracking: function() {
-                state.isTracking = false;
-                navigator.geolocation.clearWatch(state.watchId);
-                uiManager.updateStatus(false);
-            },
-
-            onPosition: function(pos) {
-                const lng = pos.coords.longitude;
-                const lat = pos.coords.latitude;
-                const accuracy = pos.coords.accuracy;
-
-                // Update Map Marker
-                gpsMarker.setLngLat([lng, lat]);
-                if (!state.lastPosition) map.flyTo({ center: [lng, lat], zoom: 16 });
-                state.lastPosition = [lng, lat];
-
-                // Core Logic: Analysis
-                gpsManager.analyzePosition(lng, lat);
-            },
-
-            analyzePosition: function(lng, lat) {
-                const point = turf.point([lng, lat]);
-                const radiusKm = config.radius / 1000;
-                const buffer = turf.buffer(point, radiusKm, { units: 'kilometers' });
-
-                // Render Buffer (Visual Debug)
-                if (map.getSource('buffer-debug')) {
-                    map.getSource('buffer-debug').setData(buffer);
-                } else {
-                    map.addSource('buffer-debug', { type: 'geojson', data: buffer });
-                    map.addLayer({
-                        'id': 'buffer-fill', 'type': 'fill', 'source': 'buffer-debug',
-                        'paint': { 'fill-color': '#007AFF', 'fill-opacity': 0.1 }
-                    });
-                }
-
-                // Get Target Layer Data
-                const targetLayer = state.layers[state.targetLayerId];
-                if (!targetLayer) return;
-
-                let matchedCount = 0;
-
-                // Loop through features (Basic implementation - for huge datasets, use Spatial Index like RBush)
-                turf.featureEach(targetLayer.data, function (currentFeature, featureIndex) {
-                    // Check strict intersection first
-                    if (turf.booleanIntersects(buffer, currentFeature)) {
-                        
-                        // Calculate precise overlap length
-                        // Note: turf.lineOverlap returns segments.
-                        // Simplified logic for "Ratio": Length of line inside buffer / Total Length of line
-                        
-                        const split = turf.lineSplit(currentFeature, buffer);
-                        // This part is complex in Turf. 
-                        // Simplified robust approach: intersect the line with the buffer polygon.
-                        // *Turf's intersect returns geometry.*
-                        
-                        // Converting buffer to polygon if it isn't already (turf.buffer returns poly)
-                        const intersection = turf.intersect(buffer, currentFeature); 
-                        // Note: turf v6 intersect takes (poly, poly) or (poly, line)? 
-                        // Depending on version. V6 supports Poly-Line intersection via `lineSplit` or boolean.
-                        // Let's use `lineSlice` logic implicitly via simple Length check if fully contained,
-                        // or just rely on distance for this MVP as full split logic is heavy for JS loop.
-                        
-                        // ALTERNATIVE MVP LOGIC: Distance check
-                        // If distance from point to line < radius, we consider it a candidate.
-                        const distance = turf.pointToLineDistance(point, currentFeature, {units: 'meters'});
-                        
-                        if (distance <= config.radius) {
-                            // Let's simulate the "Overlap Ratio" logic:
-                            // If the line segment is short and fully inside, ratio = 1.
-                            // Here we just simulate an update.
-                            
-                            const props = currentFeature.properties;
-                            const oldVal = props[config.targetAttribute] || 0;
-                            const newVal = parseFloat(oldVal) + parseFloat(config.incrementValue);
-                            
-                            // Update property in memory
-                            props[config.targetAttribute] = newVal;
-                            
-                            uiManager.log(`Match! FID:${featureIndex} Dist:${distance.toFixed(1)}m. Val: ${oldVal}->${newVal}`);
-                            matchedCount++;
-                        }
-                    }
-                });
-                
-                if (matchedCount > 0) {
-                   uiManager.updateStatusText(`Updating... (${matchedCount} links)`);
-                } else {
-                   uiManager.updateStatusText(`Scanning...`);
-                }
-            },
-
-            onError: function(err) {
-                uiManager.log(`GPS Error: ${err.message}`);
-            },
-            
-            centerMap: function() {
-                if (state.lastPosition) map.flyTo({ center: state.lastPosition, zoom: 17 });
-            }
-        };
-
-        // --- 5. UI Manager ---
-        const uiManager = {
-            toggleSheet: function() {
-                const sheet = document.getElementById('bottom-sheet');
-                const isExpanded = sheet.style.transform === 'translateY(0px)';
-                
-                if (isExpanded) {
-                    // Collapse
-                    sheet.style.transform = `translateY(calc(100% - var(--sheet-height-collapsed)))`;
-                } else {
-                    // Expand
-                    sheet.style.transform = 'translateY(0px)';
-                }
-            },
-
-            openModal: function(id) {
-                document.getElementById(id).style.display = 'flex';
-                if(id === 'layerModal') layerManager.renderLayerList();
-            },
-
-            closeModal: function(id) {
-                document.getElementById(id).style.display = 'none';
-            },
-
-            updateStatus: function(isOn) {
-                const badge = document.getElementById('gps-status');
-                const btnStart = document.getElementById('btn-start');
-                const btnStop = document.getElementById('btn-stop');
-
-                if (isOn) {
-                    badge.innerHTML = '<i class="fas fa-satellite-dish fa-spin"></i> ON';
-                    badge.classList.add('active');
-                    btnStart.style.display = 'none';
-                    btnStop.style.display = 'block';
-                } else {
-                    badge.innerHTML = '<i class="fas fa-satellite"></i> OFF';
-                    badge.classList.remove('active');
-                    btnStart.style.display = 'block';
-                    btnStop.style.display = 'none';
-                    this.updateStatusText("Ready");
-                }
-            },
-            
-            updateStatusText: function(text) {
-                document.getElementById('current-status-text').innerText = text;
-            },
-
-            log: function(msg) {
-                const container = document.getElementById('log-container');
-                const time = new Date().toLocaleTimeString().split(' ')[0];
-                const div = document.createElement('div');
-                div.className = 'log-entry';
-                div.innerHTML = `<span class="log-time">${time}</span> ${msg}`;
-                container.prepend(div);
-                
-                // Keep only last 50 logs
-                if (container.children.length > 50) container.removeChild(container.lastChild);
-            },
-
-            saveSettings: function() {
-                config.radius = parseFloat(document.getElementById('setting-radius').value);
-                config.overlapRatio = parseFloat(document.getElementById('setting-overlap').value);
-                config.targetAttribute = document.getElementById('setting-attr').value;
-                config.incrementValue = parseFloat(document.getElementById('setting-increment').value);
-                
-                this.log("Settings saved.");
-                this.closeModal('settingsModal');
-            }
-        };
-        
-        // Initial setup
-        uiManager.log("System initialized.");
-    </script>
+  <script>
+    MAP.init();
+    UI.init();
+    GPS.start();
+  </script>
 </body>
+
 </html>
