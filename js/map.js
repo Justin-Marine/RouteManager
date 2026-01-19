@@ -253,7 +253,7 @@ const LAYER = {
 
             // Label Logic
             if (this.showLabels) {
-                const txt = f.get(k) ? String(f.get(k)) : '';
+                const txt = f.get(c) !== undefined ? String(f.get(c)) : '';
                 s.push(new ol.style.Style({
                     text: new ol.style.Text({
                         text: txt,

@@ -131,10 +131,15 @@ const UI = {
             r.style.strokeDashoffset = '0'; 
             t = setTimeout(() => { this.ignoreShort = true; this.onFuncLong(); }, d); 
         };
-        const rl = () => { clearTimeout(t); r.style.transition = 'none'; r.style.strokeDashoffset = '176'; };
+        const rl = (e) => { 
+            clearTimeout(t); 
+            r.style.transition = 'none'; 
+            r.style.strokeDashoffset = '176';
+            if(e && e.type === 'touchend' && !this.ignoreShort) this.onFuncShort();
+        };
         
         btn.onmousedown = p; btn.ontouchstart = (e) => { e.preventDefault(); p(); }
-        btn.onmouseup = rl; btn.ontouchend = (e) => { e.preventDefault(); rl(); }
+        btn.onmouseup = rl; btn.ontouchend = (e) => { e.preventDefault(); rl(e); }
         btn.onclick = () => this.onFuncShort();
     },
     
