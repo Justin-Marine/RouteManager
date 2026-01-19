@@ -2,20 +2,82 @@
 const MAP = {
     view: null,
     map: null,
+    gpsLayer: null,
+    gpsSource: null,
+    cursorFeature: null,
+
     init() {
         this.view = new ol.View({ center: ol.proj.fromLonLat([127, 37.5]), zoom: 14 });
+
+        // GPS Trail/Cursor Layer
+        this.gpsSource = new ol.source.Vector();
+        this.gpsLayer = new ol.layer.Vector({
+            source: this.gpsSource,
+            zIndex: 999 
+        });
+
         this.map = new ol.Map({ 
             target: 'map', 
-            layers: [new ol.layer.Tile({ source: new ol.source.OSM() })], 
+            layers: [
+                new ol.layer.Tile({ source: new ol.source.OSM() }),
+                this.gpsLayer
+            ], 
             view: this.view, 
             controls: [] 
         });
+
+        // Init Cursor Feature
+        this.cursorFeature = new ol.Feature();
+        // Initial Style (System OFF -> Red)
+        this.cursorFeature.setStyle(new ol.style.Style({
+            image: new ol.style.Circle({
+                radius: 8,
+                fill: new ol.style.Fill({color: '#ff1744'}),
+                stroke: new ol.style.Stroke({color: '#fff', width: 2})
+            })
+        }));
+        this.gpsSource.addFeature(this.cursorFeature);
     },
+
+    updateGPSVisuals(pos) {
+        if(!this.cursorFeature) return;
+        const coord = ol.proj.fromLonLat(pos);
+        this.cursorFeature.setGeometry(new ol.geom.Point(coord));
+
+        let color = '#ff1744'; // Default Red (System OFF)
+        
+        if (APP.state === 'RUNNING') {
+            color = APP.matching ? '#00e676' : '#9e9e9e'; // Green or Gray
+            
+            // Add to Trail
+            const trailDot = new ol.Feature({geometry: new ol.geom.Point(coord)});
+            trailDot.setStyle(new ol.style.Style({
+                image: new ol.style.Circle({
+                    radius: 4,
+                    fill: new ol.style.Fill({color: color})
+                    // No stroke for trail to keep it lighter? Or minimal stroke.
+                })
+            }));
+            this.gpsSource.addFeature(trailDot);
+        }
+
+        // Update Cursor Style to match state or keep Red?
+        // User mainly asked for Red Dot when System OFF.
+        // It's cleaner if Cursor reflects current mode.
+        this.cursorFeature.setStyle(new ol.style.Style({
+            image: new ol.style.Circle({
+                radius: 8,
+                fill: new ol.style.Fill({color: color}),
+                stroke: new ol.style.Stroke({color: '#fff', width: 2})
+            })
+        }));
+    },
+
     forceCenter() { if(GPS.pos) this.view.animate({center: ol.proj.fromLonLat(GPS.pos), duration:300}); }
 };
 
 const LAYER = {
-    list: [], target: null, editId: null,
+    list: [], target: null, editId: null, showLabels: false,
     
     async add() {
         UI.toast('Loading...');
@@ -171,11 +233,53 @@ const LAYER = {
         const w = (l.style && l.style.w) ? (parseInt(l.style.w) + 2) : 6;
         
         l.layer.setStyle(f => {
-            const v = f.get(c); let cl = '#ccc'; 
-            if(v > 0) cl = '#00e676'; if(v < 0) cl = '#ff1744'; 
-            return new ol.style.Style({stroke: new ol.style.Stroke({color: cl, width: w})});
+            const v = f.get(c); 
+            // Visibility Logic: 0 -> Invisible
+            if (v === 0) return null;
+
+            // Color Palette
+            // 1: Cyan (#00BCD4), 2: Green (#00e676), 3: Yellow (#ffea00), 4: Orange (#ff9100), 5+: Red (#ff1744)
+            let cl = '#7e57c2'; // Default/Fallback (Purple)
+            if (v == 1) cl = '#00BCD4';
+            else if (v == 2) cl = '#00e676';
+            else if (v == 3) cl = '#ffea00';
+            else if (v == 4) cl = '#ff9100';
+            else if (v >= 5) cl = '#ff1744';
+            else if (v < 0) cl = '#ef5350'; // Negative (Error?)
+
+            const s = [new ol.style.Style({
+                stroke: new ol.style.Stroke({color: cl, width: w})
+            })];
+
+            // Label Logic
+            if (this.showLabels) {
+                const txt = f.get(k) ? String(f.get(k)) : '';
+                s.push(new ol.style.Style({
+                    text: new ol.style.Text({
+                        text: txt,
+                        font: 'bold 13px sans-serif',
+                        fill: new ol.style.Fill({color: '#fff'}),
+                        stroke: new ol.style.Stroke({color: '#000', width: 3}),
+                        overflow: true,
+                        offsetY: -10
+                    })
+                }));
+            }
+            return s;
         });
         UI.toast('Target Linked');
+    },
+
+    toggleLabels() {
+        this.showLabels = !this.showLabels;
+        const btn = document.getElementById('btn-toggle-labels');
+        if(btn) btn.innerText = `Toggle Labels: ${this.showLabels ? 'ON' : 'OFF'}`;
+        
+        // Refresh Style of Target Layer if exists
+        if (APP.config.target.layerId) {
+            const l = this.list.find(x => x.id === APP.config.target.layerId);
+            if(l) l.layer.changed();
+        }
     },
     
     defStyle() { return new ol.style.Style({stroke: new ol.style.Stroke({color: 'yellow', width: 3}), image: new ol.style.Circle({radius: 5, fill: new ol.style.Fill({color: 'yellow'})})}); }
@@ -192,6 +296,9 @@ const GPS = {
             // Auto Pan if not interacting
             if(MAP.view && !MAP.view.getInteracting()) MAP.view.animate({center: ol.proj.fromLonLat(this.pos), duration: 200});
             
+            // Update Visuals (Red/Green/Gray Dots)
+            MAP.updateGPSVisuals(this.pos);
+
             if(APP.state === 'RUNNING') APP.gpsLog.push(this.pos);
             if(APP.state === 'RUNNING' && APP.matching) {
                 // Algorithm Hook

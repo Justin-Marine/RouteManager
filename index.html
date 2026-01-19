@@ -559,6 +559,8 @@
         <input type="number" id="t-init" class="glass-input" value="0" style="margin-bottom:15px;">
 
         <button onclick="LAYER.saveTarget()" class="primary-btn">Link & Initialize</button>
+        <button onclick="LAYER.toggleLabels()" class="secondary-btn" style="margin-top:10px;"
+          id="btn-toggle-labels">Toggle Labels: OFF</button>
         <p style="color:#444; font-size:0.8rem; margin-top:10px; text-align:center;">Linking creates a reference for
           matching algorithm.</p>
       </div>
@@ -587,8 +589,8 @@
     <div id="tab-set-alg" class="view-container">
       <label>Operation Mode</label>
       <select id="a-mode" class="glass-input" style="margin-bottom:10px">
+        <option value="dec" selected>Decrement (-1)</option>
         <option value="inc">Increment (+1)</option>
-        <option value="dec">Decrement (-1)</option>
       </select>
       <label>Search Radius (m)</label> <input id="a-rad" type="number" class="glass-input" value="30"
         style="margin-bottom:10px">

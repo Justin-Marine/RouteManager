@@ -6,7 +6,7 @@ const APP = {
     seq: 0,
     config: { 
         survey: { name: '', ws: 'ws://localhost:8080' },
-        algo: { mode: 'inc', radius: 30, interp: 0.5, overlap: 0.85 }, 
+        algo: { mode: 'dec', radius: 30, interp: 0.5, overlap: 0.85 }, 
         target: { layerId: null, key: null, check: null, init: 0 } 
     },
     gpsLog: [],
